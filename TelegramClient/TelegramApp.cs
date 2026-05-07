@@ -1244,7 +1244,22 @@ namespace TelegramClient
                 await FetchDialogFolder(folderId, groups, seenIds);
             }
 
-            return groups;
+            // Deduplicate entries that share the same name and type but differ in members count.
+            // This handles migrated groups: when a regular group is upgraded to a supergroup,
+            // both the old Chat (0 members) and the new Channel (N members) can appear
+            // simultaneously even if the old one is supposed to be inactive.
+            // Rule: if multiple entries share the same name + type and at least one has members,
+            // drop the ones with 0 members.
+            return groups
+                .GroupBy(c => (Name: c.Name?.Trim().ToLowerInvariant() ?? string.Empty, c.Type))
+                .SelectMany(g =>
+                {
+                    var list = g.ToList();
+                    if (list.Count == 1) return list;
+                    var withMembers = list.Where(c => c.MembersCount > 0).ToList();
+                    return withMembers.Count > 0 ? withMembers : list;
+                })
+                .ToList();
         }
 
         /// <summary>
@@ -1326,8 +1341,8 @@ namespace TelegramClient
 
                 foreach (var kv in pageChats)
                 {
-                    // Skip groups the user has explicitly left; include all channels
-                    if (kv.Value is TL.Chat grpChat && !grpChat.IsActive) continue;
+                    // Skip groups the user has explicitly left or that were migrated to a supergroup
+                    if (kv.Value is TL.Chat grpChat && (!grpChat.IsActive || grpChat.migrated_to != null)) continue;
                     if (!seenIds.Add(kv.Value.ID)) continue;
 
                     if (kv.Value is TL.Channel tlChannel)
