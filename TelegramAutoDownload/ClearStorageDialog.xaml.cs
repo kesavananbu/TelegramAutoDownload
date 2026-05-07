@@ -5,37 +5,49 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 
 namespace TelegramAutoDownload
 {
-    /// <summary>
-    /// View model for a single .part file entry shown in the list.
-    /// </summary>
+    /// <summary>View model for a single file entry shown in the list.</summary>
     public record PartFileItem(
         string FileName,
         string SizeFmt,
+        string FileType,
         string LastModifiedFmt,
         string FullPath,
-        long Bytes);
+        long Bytes,
+        bool IsIncomplete);
 
     public partial class ClearStorageDialog : MetroWindow
     {
         private readonly string _rootPath;
-        private List<PartFileItem> _files = new();
+
+        // Full scan result (all files)
+        private List<PartFileItem> _allFiles = new();
+        // Currently displayed (filtered) list
+        private List<PartFileItem> _displayedFiles = new();
 
         public ClearStorageDialog(string rootPath)
         {
             InitializeComponent();
             _rootPath = rootPath;
 
-            // Default range: last 30 days up to today
-            dpFrom.SelectedDate = DateTime.Today.AddDays(-30);
+            // Default range: today only
+            dpFrom.SelectedDate = DateTime.Today;
             dpTo.SelectedDate   = DateTime.Today;
+
+            listFiles.SelectionChanged += ListFiles_SelectionChanged;
+
+            // Auto-scan on open
+            Loaded += async (_, _) => await RunScanAsync();
         }
 
         // ── Scan ─────────────────────────────────────────────────────────────
 
-        private async void BtnScan_Click(object sender, RoutedEventArgs e)
+        private async void BtnScan_Click(object sender, RoutedEventArgs e) => await RunScanAsync();
+
+        private async Task RunScanAsync()
         {
             SetScanning(true);
 
@@ -44,33 +56,33 @@ namespace TelegramAutoDownload
 
             try
             {
-                _files = await Task.Run(() => ScanPartFiles(from, to));
+                _allFiles = await Task.Run(() => ScanAllFiles(from, to));
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"Scan failed: {ex.Message}", "Clear Storage",
                     MessageBoxButton.OK, MessageBoxImage.Error);
-                _files = new List<PartFileItem>();
+                _allFiles = new List<PartFileItem>();
             }
             finally
             {
                 SetScanning(false);
             }
 
-            listFiles.ItemsSource = _files;
-            UpdateSummary();
+            ApplyFilter();
         }
 
         /// <summary>
-        /// Scans <see cref="_rootPath"/> recursively for *.part files within the given date range.
-        /// Runs on a background thread — must not touch UI elements.
+        /// Scans <see cref="_rootPath"/> recursively for ALL files within the date range.
+        /// .part files are flagged as IsIncomplete = true.
+        /// Runs on a background thread.
         /// </summary>
-        private List<PartFileItem> ScanPartFiles(DateTime from, DateTime to)
+        private List<PartFileItem> ScanAllFiles(DateTime from, DateTime to)
         {
             if (!Directory.Exists(_rootPath)) return new List<PartFileItem>();
 
             return Directory
-                .EnumerateFiles(_rootPath, "*.part", SearchOption.AllDirectories)
+                .EnumerateFiles(_rootPath, "*.*", SearchOption.AllDirectories)
                 .Select(p =>
                 {
                     try { return new FileInfo(p); }
@@ -78,23 +90,63 @@ namespace TelegramAutoDownload
                 })
                 .Where(f => f != null && f.LastWriteTime >= from && f.LastWriteTime < to)
                 .OrderByDescending(f => f!.Length)
-                .Select(f => new PartFileItem(
-                    f!.Name,
-                    FormatBytes(f.Length),
-                    f.LastWriteTime.ToString("yyyy-MM-dd HH:mm"),
-                    f.FullName,
-                    f.Length))
+                .Select(f =>
+                {
+                    bool incomplete = f!.Extension.Equals(".part", StringComparison.OrdinalIgnoreCase);
+                    string type = incomplete ? ".part" : f.Extension.ToLowerInvariant();
+                    return new PartFileItem(
+                        f.Name,
+                        FormatBytes(f.Length),
+                        type,
+                        f.LastWriteTime.ToString("yyyy-MM-dd HH:mm"),
+                        f.FullName,
+                        f.Length,
+                        incomplete);
+                })
                 .ToList();
+        }
+
+        // ── Filter ────────────────────────────────────────────────────────────
+
+        private void FilterChanged(object sender, RoutedEventArgs e) => ApplyFilter();
+
+        private void ApplyFilter()
+        {
+            bool incompleteOnly = chkIncompleteOnly.IsChecked == true;
+            _displayedFiles = incompleteOnly
+                ? _allFiles.Where(f => f.IsIncomplete).ToList()
+                : _allFiles;
+
+            listFiles.ItemsSource = _displayedFiles;
+            UpdateSummary();
+        }
+
+        // ── Selection ─────────────────────────────────────────────────────────
+
+        private void ListFiles_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            int count = listFiles.SelectedItems.Count;
+            long totalBytes = listFiles.SelectedItems
+                .Cast<PartFileItem>()
+                .Sum(f => f.Bytes);
+
+            btnDelete.IsEnabled = count > 0;
+            btnDelete.Content   = count > 0
+                ? $"Delete Selected ({count}) — {FormatBytes(totalBytes)}"
+                : "Delete Selected (0)";
         }
 
         // ── Delete ────────────────────────────────────────────────────────────
 
-        private void BtnDelete_Click(object sender, RoutedEventArgs e)
+        private async void BtnDelete_Click(object sender, RoutedEventArgs e)
         {
-            if (_files.Count == 0) return;
+            var selected = listFiles.SelectedItems.Cast<PartFileItem>().ToList();
+            if (selected.Count == 0) return;
+
+            long totalBytes = selected.Sum(f => f.Bytes);
 
             var confirm = MessageBox.Show(
-                $"Delete {_files.Count} incomplete file(s)?\n\nThis cannot be undone.",
+                $"Delete {selected.Count} file(s) ({FormatBytes(totalBytes)})?\n\nThis cannot be undone.",
                 "Clear Storage",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Warning);
@@ -105,7 +157,7 @@ namespace TelegramAutoDownload
             long freed  = 0;
             var failed  = new List<string>();
 
-            foreach (var item in _files)
+            foreach (var item in selected)
             {
                 try
                 {
@@ -127,8 +179,14 @@ namespace TelegramAutoDownload
             MessageBox.Show(msg, "Clear Storage", MessageBoxButton.OK, MessageBoxImage.Information);
 
             // Refresh the list so it reflects what is still on disk
-            BtnScan_Click(sender, e);
+            await RunScanAsync();
         }
+
+        // ── Select All / Deselect All ─────────────────────────────────────────
+
+        private void BtnSelectAll_Click(object sender, RoutedEventArgs e) => listFiles.SelectAll();
+
+        private void BtnDeselectAll_Click(object sender, RoutedEventArgs e) => listFiles.UnselectAll();
 
         // ── Close ─────────────────────────────────────────────────────────────
 
@@ -136,20 +194,18 @@ namespace TelegramAutoDownload
 
         // ── Helpers ───────────────────────────────────────────────────────────
 
-        /// <summary>Updates the summary label and the Delete button label/state.</summary>
+        /// <summary>Updates the summary label.</summary>
         private void UpdateSummary()
         {
-            long totalBytes = _files.Sum(f => f.Bytes);
+            long totalBytes = _displayedFiles.Sum(f => f.Bytes);
+            int incomplete  = _displayedFiles.Count(f => f.IsIncomplete);
 
             pnlSummary.Visibility = Visibility.Visible;
-            tbSummary.Text = $"{_files.Count} file(s) found — Space to free: {FormatBytes(totalBytes)}";
+            tbSummary.Text = _displayedFiles.Count > 0
+                ? $"{_displayedFiles.Count} file(s) — Total: {FormatBytes(totalBytes)}" +
+                  (incomplete > 0 ? $"  |  {incomplete} incomplete (.part)" : string.Empty)
+                : "No files found in the selected date range.";
 
-            btnDelete.IsEnabled = _files.Count > 0;
-            btnDelete.Content   = $"Delete {_files.Count} file(s)";
-
-            tbDeleteHint.Text = _files.Count > 0
-                ? "Files shown above will be permanently deleted."
-                : "No .part files found in the selected date range.";
         }
 
         /// <summary>Toggles the scanning indicator and disables controls while running.</summary>
@@ -157,9 +213,10 @@ namespace TelegramAutoDownload
         {
             pnlScanning.Visibility = scanning ? Visibility.Visible : Visibility.Collapsed;
             btnScan.IsEnabled      = !scanning;
-            btnDelete.IsEnabled    = !scanning && _files.Count > 0;
+            btnDelete.IsEnabled    = !scanning && listFiles.SelectedItems.Count > 0;
             dpFrom.IsEnabled       = !scanning;
             dpTo.IsEnabled         = !scanning;
+            chkIncompleteOnly.IsEnabled = !scanning;
         }
 
         private static string FormatBytes(long bytes)

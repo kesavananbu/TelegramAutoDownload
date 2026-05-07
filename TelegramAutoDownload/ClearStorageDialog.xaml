@@ -6,8 +6,8 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
         Title="Clear Storage"
-        Height="580" Width="700"
-        MinHeight="400" MinWidth="550"
+        Height="620" Width="780"
+        MinHeight="420" MinWidth="600"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
 
@@ -21,31 +21,17 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Header description -->
-        <Border Grid.Row="0" Background="#FFF3E0" CornerRadius="6" Padding="12,10"
-                BorderBrush="#FFCC80" BorderThickness="1" Margin="0,0,0,16">
-            <StackPanel Orientation="Horizontal">
-                <TextBlock Text="ℹ" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center" Foreground="#E65100"/>
-                <TextBlock TextWrapping="Wrap" Foreground="#5D4037" FontSize="11">
-                    <Run FontWeight="SemiBold">Incomplete downloads</Run>
-                    <Run>are stored as </Run>
-                    <Run FontWeight="SemiBold">.part</Run>
-                    <Run> files. Deleting them frees disk space. Recent .part files may be resumable — check the date before deleting.</Run>
-                </TextBlock>
-            </StackPanel>
-        </Border>
-
-        <!-- Date range filter + Scan button -->
-        <Border Grid.Row="1" Background="#F5F5F5" CornerRadius="6" Padding="16,12" Margin="0,0,0,12">
+        <!-- Date range filter + options -->
+        <Border Grid.Row="0" Background="#F5F5F5" CornerRadius="6" Padding="16,12" Margin="0,0,0,12">
             <StackPanel>
                 <TextBlock Text="Filter by last-modified date" FontWeight="SemiBold" Margin="0,0,0,8"/>
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="160"/>
-                        <ColumnDefinition Width="16"/>
+                        <ColumnDefinition Width="150"/>
+                        <ColumnDefinition Width="12"/>
                         <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="160"/>
+                        <ColumnDefinition Width="150"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
@@ -63,32 +49,50 @@
                             Style="{DynamicResource MahApps.Styles.Button.Square.Accent}"
                             Click="BtnScan_Click"/>
                 </Grid>
+
+                <!-- Filter options row -->
+                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                    <CheckBox x:Name="chkIncompleteOnly"
+                              Content="Show incomplete (.part) files only"
+                              IsChecked="False"
+                              VerticalAlignment="Center"
+                              Checked="FilterChanged" Unchecked="FilterChanged"/>
+                </StackPanel>
             </StackPanel>
         </Border>
 
         <!-- Summary bar -->
-        <Border Grid.Row="2" Background="#E8F5E9" CornerRadius="6" Padding="12,8"
+        <Border Grid.Row="1" Background="#E8F5E9" CornerRadius="6" Padding="12,8"
                 BorderBrush="#A5D6A7" BorderThickness="1" Margin="0,0,0,8"
                 x:Name="pnlSummary" Visibility="Collapsed">
-            <DockPanel>
-                <TextBlock x:Name="tbSummary" Foreground="#2E7D32" FontWeight="SemiBold"
-                           VerticalAlignment="Center"
-                           Text="0 files found — Space to free: 0 B"/>
-            </DockPanel>
+            <TextBlock x:Name="tbSummary" Foreground="#2E7D32" FontWeight="SemiBold"
+                       VerticalAlignment="Center"
+                       Text="0 files found — Total size: 0 B"/>
+        </Border>
+
+        <!-- Scanning indicator -->
+        <Border Grid.Row="2" Margin="0,0,0,4" x:Name="pnlScanning" Visibility="Collapsed">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                <mah:ProgressRing Width="20" Height="20" IsActive="True" Margin="0,0,8,0"/>
+                <TextBlock Text="Scanning…" VerticalAlignment="Center" Foreground="#888"/>
+            </StackPanel>
         </Border>
 
         <!-- File list -->
         <Border Grid.Row="3" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4">
-            <ListView x:Name="listFiles" BorderThickness="0">
+            <ListView x:Name="listFiles" BorderThickness="0"
+                      SelectionMode="Extended">
                 <ListView.View>
                     <GridView>
-                        <GridViewColumn Header="File Name" Width="220"
+                        <GridViewColumn Header="File Name" Width="250"
                                         DisplayMemberBinding="{Binding FileName}"/>
                         <GridViewColumn Header="Size" Width="80"
                                         DisplayMemberBinding="{Binding SizeFmt}"/>
+                        <GridViewColumn Header="Type" Width="70"
+                                        DisplayMemberBinding="{Binding FileType}"/>
                         <GridViewColumn Header="Last Modified" Width="140"
                                         DisplayMemberBinding="{Binding LastModifiedFmt}"/>
-                        <GridViewColumn Header="Full Path" Width="220"
+                        <GridViewColumn Header="Full Path" Width="240"
                                         DisplayMemberBinding="{Binding FullPath}"/>
                     </GridView>
                 </ListView.View>
@@ -101,7 +105,7 @@
                                         <ControlTemplate TargetType="ListView">
                                             <Border BorderBrush="{TemplateBinding BorderBrush}"
                                                     BorderThickness="{TemplateBinding BorderThickness}">
-                                                <TextBlock Text="No .part files found. Press Scan to search."
+                                                <TextBlock Text="No files found. Press Scan to search."
                                                            HorizontalAlignment="Center" VerticalAlignment="Center"
                                                            Foreground="#AAAAAA" FontSize="12" Margin="0,40"/>
                                             </Border>
@@ -112,15 +116,18 @@
                         </Style.Triggers>
                     </Style>
                 </ListView.Style>
+                <!-- Highlight .part files in light red -->
+                <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsIncomplete}" Value="True">
+                                <Setter Property="Background" Value="#FFEBEE"/>
+                                <Setter Property="Foreground" Value="#B71C1C"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ListView.ItemContainerStyle>
             </ListView>
-        </Border>
-
-        <!-- Scanning indicator (shown while scan is running) -->
-        <Border Grid.Row="4" Margin="0,8,0,0" x:Name="pnlScanning" Visibility="Collapsed">
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                <mah:ProgressRing Width="20" Height="20" IsActive="True" Margin="0,0,8,0"/>
-                <TextBlock Text="Scanning…" VerticalAlignment="Center" Foreground="#888"/>
-            </StackPanel>
         </Border>
 
         <!-- Action buttons -->
@@ -132,17 +139,20 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
-            <TextBlock Grid.Column="0" x:Name="tbDeleteHint"
-                       Foreground="#888" FontSize="11" VerticalAlignment="Center"
-                       Text="Scan first to see which files will be deleted."/>
+            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                <Button x:Name="btnSelectAll" Content="Select All" Height="32" Width="90"
+                        Margin="0,0,8,0" Click="BtnSelectAll_Click"/>
+                <Button x:Name="btnDeselectAll" Content="Deselect All" Height="32" Width="90"
+                        Click="BtnDeselectAll_Click"/>
+            </StackPanel>
 
             <Button Grid.Column="1" x:Name="btnDelete"
-                    Height="32" Width="130"
+                    Height="32" Width="150"
                     IsEnabled="False"
                     Foreground="White"
                     Background="#D32F2F"
                     BorderBrush="#B71C1C"
-                    Content="Delete 0 files"
+                    Content="Delete Selected (0)"
                     Click="BtnDelete_Click"/>
 
             <Button Grid.Column="3" Content="Close" Height="32" Width="80"
