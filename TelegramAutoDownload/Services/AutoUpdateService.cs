@@ -177,7 +177,11 @@ namespace TelegramAutoDownload.Services
 
                     string srcDir = tmpExtract;
                     var subdirs = Directory.GetDirectories(tmpExtract);
-                    if (subdirs.Length == 1) srcDir = subdirs[0];
+                    // Only treat as "single root folder" layout if the root contains NO files of its own.
+                    // Our portable ZIP has the exe directly at root plus a Plugins/ subfolder,
+                    // so subdirs.Length == 1 but srcDir must stay at root.
+                    if (subdirs.Length == 1 && !Directory.GetFiles(tmpExtract).Any())
+                        srcDir = subdirs[0];
 
                     var appDir = AppDomain.CurrentDomain.BaseDirectory;
                     var exeName = Path.GetFileName(Process.GetCurrentProcess().MainModule!.FileName);
