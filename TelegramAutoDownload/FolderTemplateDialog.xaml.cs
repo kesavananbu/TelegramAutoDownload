@@ -118,21 +118,27 @@ namespace TelegramAutoDownload
 
         // ── Preview ──────────────────────────────────────────────────────────
 
+        // Sample media type used in the preview — matches what {Type} resolves to at download time.
+        private const string PreviewMediaType = "Videos";
+
         private void UpdatePreview()
         {
             var template = TxtTemplate.Text?.Trim() ?? string.Empty;
 
             if (string.IsNullOrEmpty(template))
             {
-                TxtPreview.Text = Path.Combine(_basePath, _chatType, _chatName);
+                // Real default layout: {basePath}/{MediaType}/{ChatName}
+                // Show "Videos" as a representative example since the actual type varies per file.
+                TxtPreview.Text = Path.Combine(_basePath, PreviewMediaType, _chatName)
+                                  + "  (Videos / Photos / Music / Files)";
                 TxtMode.Text    = "mode: default";
                 return;
             }
 
             // Always resolve tokens (works for both relative and absolute paths)
             var sampleDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, DateTime.Now.Day);
-            var resolved   = FolderTemplateHelper.Resolve(template, _chatType, _chatName, sampleDate)
-                             ?? Path.Combine(_chatType, _chatName);
+            var resolved   = FolderTemplateHelper.Resolve(template, PreviewMediaType, _chatName, sampleDate)
+                             ?? Path.Combine(PreviewMediaType, _chatName);
 
             if (Path.IsPathRooted(resolved))
             {

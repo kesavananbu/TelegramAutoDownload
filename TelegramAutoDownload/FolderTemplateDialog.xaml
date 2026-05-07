@@ -53,7 +53,7 @@
                         <Button Content="{}{Type}" Tag="{}{Type}" Click="Token_Click"
                                 Padding="6,4" FontFamily="Consolas" FontWeight="Bold"
                                 Background="#2196F3" Foreground="White" BorderThickness="0"/>
-                        <TextBlock Text="Channel / Group / User" TextWrapping="Wrap"
+                        <TextBlock Text="Videos / Photos / Music / Files" TextWrapping="Wrap"
                                    FontSize="10" Foreground="#555" Margin="2,3,2,0"/>
                     </StackPanel>
                     <StackPanel Margin="3">

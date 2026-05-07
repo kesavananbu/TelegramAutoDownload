@@ -406,10 +406,6 @@ namespace TelegramClient
             {
                 onStatus?.Invoke($"Syncing {chatDto.Name}…");
 
-                // Pre-create the folder structure for all selected download types so the user
-                // can see the folders immediately, even before any file is downloaded.
-                PreCreateFolders(chatDto);
-
                 // Reset watermark so we re-evaluate all messages
                 _highWatermark[chatDto.Id] = 0;
 
@@ -903,36 +899,6 @@ namespace TelegramClient
         /// Extracts a display filename from a message for queue preview.
         /// Returns null if the message has no downloadable media.
         /// </summary>
-        /// <summary>
-        /// Creates the folder structure for all enabled download types under the configured save path.
-        /// Called at the start of SYNC so the user can see the folders immediately.
-        /// Structure: {PathSaveFile}/{TypeName}/{ChatName}/
-        /// </summary>
-        private void PreCreateFolders(ChatDto chatDto)
-        {
-            var basePath = _configParams?.PathSaveFile;
-            if (string.IsNullOrWhiteSpace(basePath)) return;
-
-            var chatFolderName = chatDto.Name.TrimEnd();
-            foreach (char c in Path.GetInvalidFileNameChars())
-                chatFolderName = chatFolderName.Replace(c, ' ');
-
-            var enabledTypes = new (bool enabled, string name)[]
-            {
-                (chatDto.Download.Videos, "Videos"),
-                (chatDto.Download.Photos, "Photos"),
-                (chatDto.Download.Music,  "Music"),
-                (chatDto.Download.Files,  "Files"),
-            };
-
-            foreach (var (enabled, typeName) in enabledTypes)
-            {
-                if (!enabled) continue;
-                try { Directory.CreateDirectory(Path.Combine(basePath, typeName, chatFolderName)); }
-                catch { /* non-critical — download will retry folder creation */ }
-            }
-        }
-
         /// <summary>
         /// Returns true if the message's media type is enabled in the chat's download settings.
         /// Used to skip enqueuing and downloading messages whose type the user has not selected.
