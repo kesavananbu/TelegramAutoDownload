@@ -363,18 +363,47 @@ namespace TelegramAutoDownload.Tests
         [InlineData(@"C:\Downloads\MyChannel")]
         [InlineData(@"D:\Media\Telegram")]
         [InlineData(@"C:\")]
-        public void Resolve_AbsoluteWindowsPath_ReturnedAsIs(string absolutePath)
+        public void Resolve_AbsoluteWindowsPath_NoTokens_ReturnedAsIs(string absolutePath)
         {
+            // Paths without tokens should come back unchanged even after the resolve pass
             var result = FolderTemplateHelper.Resolve(absolutePath, "Videos", "SomeChat");
-            result.Should().Be(absolutePath,
-                because: "an absolute path must pass through without token substitution or sanitisation");
+            result.Should().Be(absolutePath);
+        }
+
+        [Fact]
+        public void Resolve_AbsolutePathWithTokens_TokensAreReplaced()
+        {
+            // Absolute path that contains {ChatName} should have the token replaced
+            var template = @"C:\Downloads\{ChatName}";
+            var result   = FolderTemplateHelper.Resolve(template, "Videos", "MyChannel")!;
+            result.Should().Be(@"C:\Downloads\MyChannel");
+        }
+
+        [Fact]
+        public void Resolve_AbsolutePathWithDateTokens_TokensAreReplaced()
+        {
+            var template = @"C:\Archive\{Year}\{Month}";
+            var result   = FolderTemplateHelper.Resolve(template, "Videos", "Chat",
+                               new DateTime(2026, 5, 7))!;
+            result.Should().Be(@"C:\Archive\2026\05");
+        }
+
+        [Fact]
+        public void Resolve_AbsolutePathAfterTokenReplacement_IsStillRooted()
+        {
+            // After token substitution the path must still be absolute so callers
+            // can detect it with Path.IsPathRooted and skip Path.Combine with basePath
+            var template = @"C:\Downloads\{ChatName}\{Year}";
+            var result   = FolderTemplateHelper.Resolve(template, "Videos", "Chan",
+                               new DateTime(2026, 1, 1))!;
+            System.IO.Path.IsPathRooted(result).Should().BeTrue();
+            result.Should().Be(@"C:\Downloads\Chan\2026");
         }
 
         [Fact]
         public void Resolve_AbsolutePath_IsPathRooted()
         {
-            var template = @"C:\Custom\Folder";
-            var result   = FolderTemplateHelper.Resolve(template, "Videos", "Chat")!;
+            var result = FolderTemplateHelper.Resolve(@"C:\Custom\Folder", "Videos", "Chat")!;
             System.IO.Path.IsPathRooted(result).Should().BeTrue();
         }
 
@@ -391,25 +420,18 @@ namespace TelegramAutoDownload.Tests
         public void Resolve_AbsolutePath_DriveLetterNotSanitised()
         {
             // Colon in drive letter must not be replaced with underscore
-            var template = @"C:\Some Folder";
-            var result   = FolderTemplateHelper.Resolve(template, "Videos", "Chat")!;
+            var result = FolderTemplateHelper.Resolve(@"C:\Some Folder", "Videos", "Chat")!;
             result.Should().Contain("C:");
             result.Should().NotContain("C_");
         }
 
         [Fact]
-        public void BaseMessage_PathLocationFolder_AbsoluteTemplate_IgnoresBasePath()
+        public void BaseMessage_PathLocationFolder_AbsoluteTemplate_StillRootedAfterResolve()
         {
-            // Verify that PathLocationFolder uses the resolved absolute path directly,
-            // not prepended with any basePath.  We test FolderTemplateHelper.Resolve
-            // because BaseMessage is internal; the contract is that Path.IsPathRooted
-            // on the resolved value means "use as-is".
-            var absoluteTemplate = @"C:\DirectFolder";
-            var resolved = FolderTemplateHelper.Resolve(absoluteTemplate, "Videos", "Chat");
-
-            System.IO.Path.IsPathRooted(resolved!).Should().BeTrue(
-                because: "callers (PathLocationFolder, SaveCapturedTextAsync) " +
-                         "must detect this and skip Path.Combine with basePath");
+            // Callers use Path.IsPathRooted on the resolved value to detect absolute paths
+            // and skip Path.Combine with basePath.
+            var resolved = FolderTemplateHelper.Resolve(@"C:\DirectFolder", "Videos", "Chat");
+            System.IO.Path.IsPathRooted(resolved!).Should().BeTrue();
         }
     }
 
@@ -419,22 +441,20 @@ namespace TelegramAutoDownload.Tests
 
     public class FolderTemplateDialogLogicTests
     {
-        // These tests verify the preview / resolution logic used by the dialog
-        // without instantiating WPF controls.
-
+        // Mirrors the fixed UpdatePreview logic: always resolve tokens, then check
+        // whether the RESULT is rooted (not the raw template).
         private static string BuildPreview(string template, string basePath, string type, string chatName)
         {
             if (string.IsNullOrWhiteSpace(template))
                 return System.IO.Path.Combine(basePath, type, chatName);
 
-            if (System.IO.Path.IsPathRooted(template))
-                return template;
-
             var resolved = FolderTemplateHelper.Resolve(template, type, chatName,
                                new DateTime(2026, 5, 6))
                            ?? System.IO.Path.Combine(type, chatName);
 
-            return System.IO.Path.Combine(basePath, resolved);
+            return System.IO.Path.IsPathRooted(resolved)
+                ? resolved
+                : System.IO.Path.Combine(basePath, resolved);
         }
 
         [Fact]
@@ -452,12 +472,30 @@ namespace TelegramAutoDownload.Tests
         }
 
         [Fact]
-        public void Preview_AbsoluteTemplate_IgnoresBase()
+        public void Preview_AbsoluteTemplate_NoTokens_IgnoresBase()
         {
             var absolute = @"E:\Archive\Telegram";
-            var preview  = BuildPreview(absolute, @"C:\TG", "Videos", "Chan");
-            preview.Should().Be(absolute,
-                because: "absolute path must bypass the base download folder completely");
+            BuildPreview(absolute, @"C:\TG", "Videos", "Chan")
+                .Should().Be(absolute);
+        }
+
+        [Fact]
+        public void Preview_AbsoluteTemplate_WithChatNameToken_ResolvesToken()
+        {
+            // Bug fix: absolute paths with tokens must show resolved value in preview
+            var template = @"C:\Downloads\{ChatName}";
+            var preview  = BuildPreview(template, @"D:\Base", "Videos", "MySeries");
+            preview.Should().Be(@"C:\Downloads\MySeries",
+                because: "token must be substituted even when path is absolute");
+        }
+
+        [Fact]
+        public void Preview_AbsoluteTemplate_WithDateTokens_ResolvesTokens()
+        {
+            var template = @"C:\Archive\{Year}\{Month}";
+            // BuildPreview uses date 2026-05-06
+            var preview  = BuildPreview(template, @"D:\Base", "Videos", "Chan");
+            preview.Should().Be(@"C:\Archive\2026\05");
         }
 
         [Fact]
@@ -467,6 +505,32 @@ namespace TelegramAutoDownload.Tests
             var preview  = BuildPreview(absolute, @"D:\Base", "Group", "Chat");
             preview.Should().Be(absolute);
             preview.Should().NotContain(@"D:\Base");
+        }
+
+        [Fact]
+        public void TokenInsertion_AtCursor_InsertsWithoutClearingExistingText()
+        {
+            // Simulate the fixed Token_Click logic: insert at cursor without wiping
+            const string existingText = @"C:\Users\Desktop\";
+            const string token        = "{ChatName}";
+            int           cursorPos   = existingText.Length; // cursor at end
+
+            var result = existingText.Insert(cursorPos, token);
+
+            result.Should().Be(@"C:\Users\Desktop\{ChatName}",
+                because: "token must be appended at the cursor without clearing the path");
+        }
+
+        [Fact]
+        public void TokenInsertion_AtMiddleOfText_InsertsAtCorrectPosition()
+        {
+            const string existingText = @"C:\Desktop\suffix";
+            const string token        = "{ChatName}\\";
+            int           cursorPos   = @"C:\Desktop\".Length;
+
+            var result = existingText.Insert(cursorPos, token);
+
+            result.Should().Be(@"C:\Desktop\{ChatName}\suffix");
         }
     }
 }

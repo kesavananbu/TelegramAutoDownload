@@ -37,22 +37,26 @@ namespace TelegramClient
         {
             if (string.IsNullOrWhiteSpace(template)) return null;
 
-            // Absolute paths are returned as-is — caller should NOT combine with basePath.
-            if (Path.IsPathRooted(template)) return template;
-
             var now  = at ?? DateTime.Now;
             var safe = SanitizeName(chatName);
 
+            // Apply token substitution regardless of whether the path is absolute.
+            // An absolute path like "C:\Downloads\{ChatName}" must still have its
+            // tokens replaced so the caller gets a fully-resolved concrete path.
             var resolved = template
-                .Replace("{Type}",     type,                StringComparison.OrdinalIgnoreCase)
-                .Replace("{ChatName}", safe,                 StringComparison.OrdinalIgnoreCase)
-                .Replace("{Year}",     now.ToString("yyyy"), StringComparison.OrdinalIgnoreCase)
-                .Replace("{Month}",    now.ToString("MM"),   StringComparison.OrdinalIgnoreCase)
-                .Replace("{Day}",      now.ToString("dd"),   StringComparison.OrdinalIgnoreCase);
+                .Replace("{Type}",     type,                 StringComparison.OrdinalIgnoreCase)
+                .Replace("{ChatName}", safe,                  StringComparison.OrdinalIgnoreCase)
+                .Replace("{Year}",     now.ToString("yyyy"),  StringComparison.OrdinalIgnoreCase)
+                .Replace("{Month}",    now.ToString("MM"),    StringComparison.OrdinalIgnoreCase)
+                .Replace("{Day}",      now.ToString("dd"),    StringComparison.OrdinalIgnoreCase);
 
-            // Sanitize any remaining invalid path chars that came from the template itself
-            foreach (char c in Path.GetInvalidPathChars())
-                resolved = resolved.Replace(c, '_');
+            // Sanitize invalid path chars — but only for relative templates,
+            // because absolute paths already have a valid root (e.g. "C:\").
+            if (!Path.IsPathRooted(resolved))
+            {
+                foreach (char c in Path.GetInvalidPathChars())
+                    resolved = resolved.Replace(c, '_');
+            }
 
             return resolved;
         }

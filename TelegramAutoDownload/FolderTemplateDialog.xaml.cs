@@ -46,17 +46,22 @@ namespace TelegramAutoDownload
             if (sender is not System.Windows.Controls.Button btn) return;
             var token = btn.Tag as string ?? string.Empty;
 
-            // When inserting a token, switch away from absolute-path mode
-            if (Path.IsPathRooted(TxtTemplate.Text))
-            {
-                TxtTemplate.Text = string.Empty;
-                TxtAbsolutePath.Text = "No folder selected — template above will be used";
-            }
+            // Capture position and current text BEFORE any modification
+            var pos     = TxtTemplate.CaretIndex;
+            var current = TxtTemplate.Text ?? string.Empty;
 
-            var pos = TxtTemplate.CaretIndex;
-            TxtTemplate.Text = TxtTemplate.Text.Insert(pos, token);
+            // If the field shows an absolute path, clear the browse-area label
+            // but keep the text so the token is appended at the cursor
+            if (Path.IsPathRooted(current))
+                TxtAbsolutePath.Text = "No folder selected — template above will be used";
+
+            _suppressUpdate = true;
+            TxtTemplate.Text = current.Insert(pos, token);
+            _suppressUpdate = false;
+
             TxtTemplate.CaretIndex = pos + token.Length;
             TxtTemplate.Focus();
+            UpdatePreview();
         }
 
         // ── Template text box ────────────────────────────────────────────────
@@ -119,25 +124,28 @@ namespace TelegramAutoDownload
 
             if (string.IsNullOrEmpty(template))
             {
-                // Default layout: {Type}/{ChatName}
                 TxtPreview.Text = Path.Combine(_basePath, _chatType, _chatName);
                 TxtMode.Text    = "mode: default";
                 return;
             }
 
-            if (Path.IsPathRooted(template))
-            {
-                TxtPreview.Text = template;
-                TxtMode.Text    = "mode: absolute path";
-                return;
-            }
-
-            // Relative template — resolve tokens with sample date
+            // Always resolve tokens (works for both relative and absolute paths)
             var sampleDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, DateTime.Now.Day);
             var resolved   = FolderTemplateHelper.Resolve(template, _chatType, _chatName, sampleDate)
                              ?? Path.Combine(_chatType, _chatName);
-            TxtPreview.Text = Path.Combine(_basePath, resolved);
-            TxtMode.Text    = "mode: template";
+
+            if (Path.IsPathRooted(resolved))
+            {
+                // Absolute path (with tokens already substituted)
+                TxtPreview.Text = resolved;
+                TxtMode.Text    = "mode: absolute path";
+            }
+            else
+            {
+                // Relative template — combine with base path
+                TxtPreview.Text = Path.Combine(_basePath, resolved);
+                TxtMode.Text    = "mode: template";
+            }
         }
 
         // ── OK / Cancel ──────────────────────────────────────────────────────
