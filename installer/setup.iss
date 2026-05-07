@@ -3,7 +3,7 @@
 #define AppPublisher "TelegramAutoDownload"
 #define AppURL "https://github.com/il90il90/TelegramAutoDownload"
 #define AppExeName "TelegramAutoDownload.exe"
-#define SourceDir "..\publish_out"
+#define SourceDir "..\publish"
 #define OutputDir ".."
 #define OutputName "TelegramAutoDownload_v2.6.6_Setup"
 
