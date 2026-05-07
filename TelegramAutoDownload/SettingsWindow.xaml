@@ -197,6 +197,19 @@ Enable this only if you want to receive a Telegram message when a download finis
                                     IsSnapToTickEnabled="True" TickFrequency="1"
                                     ValueChanged="SliderThreads_ValueChanged"/>
                         </DockPanel>
+
+                        <!-- Storage maintenance -->
+                        <Separator Margin="0,12,0,12"/>
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Left">
+                                <TextBlock Text="Clear Storage" FontWeight="SemiBold"/>
+                                <TextBlock Text="Remove incomplete (.part) download files."
+                                           Foreground="#888" FontSize="11"/>
+                            </StackPanel>
+                            <Button x:Name="btnClearStorage" Content="Clear Storage…"
+                                    Height="32" Width="120" HorizontalAlignment="Right"
+                                    Click="BtnClearStorage_Click"/>
+                        </DockPanel>
                     </StackPanel>
                 </Border>
 

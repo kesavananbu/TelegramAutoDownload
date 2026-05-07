@@ -794,16 +794,32 @@ namespace TelegramAutoDownload
 
                 if (!comboBox.IsLoaded) return;
 
-                var tag = comboBox.Tag as string;
-                var currentValue = tag == "start"   ? chatDto.DownloadStartIcon
-                                 : tag == "history" ? chatDto.HistoryIcon
-                                 : chatDto.ReactionIcon;
-
-                SetupEmojiComboBox(comboBox, chatDto, currentValue);
-
-                // Update visibility for all icon ComboBoxes in the same row
+                // Refresh ALL icon ComboBoxes in this row so start/end/history all show the same list
                 var row = GetListViewItemFromComboBox(comboBox);
-                UpdateIconComboBoxVisibility(chatDto, row);
+                if (row != null)
+                {
+                    foreach (var combo in FindVisualChildren<ComboBox>(row))
+                    {
+                        var t = combo.Tag as string;
+                        if (t == "start" || t == "end" || t == "history")
+                        {
+                            var val = t == "start"   ? chatDto.DownloadStartIcon
+                                    : t == "history" ? chatDto.HistoryIcon
+                                    : chatDto.ReactionIcon;
+                            SetupEmojiComboBox(combo, chatDto, val);
+                        }
+                    }
+                    UpdateIconComboBoxVisibility(chatDto, row);
+                }
+                else
+                {
+                    // Fallback: at least update the opened combo
+                    var tag = comboBox.Tag as string;
+                    var currentValue = tag == "start"   ? chatDto.DownloadStartIcon
+                                     : tag == "history" ? chatDto.HistoryIcon
+                                     : chatDto.ReactionIcon;
+                    SetupEmojiComboBox(comboBox, chatDto, currentValue);
+                }
             }
             catch { /* non-critical */ }
         }

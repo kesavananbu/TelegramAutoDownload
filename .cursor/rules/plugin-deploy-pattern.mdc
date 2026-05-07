@@ -1,0 +1,56 @@
+# Plugin DeployPlugin Target Pattern
+
+## Rule
+
+Every plugin project (`TorrentPlugin`, `SocialMediaPlugin`, `YoutubePlugin`, `DownloadPlugin`) MUST have a `DeployPlugin` MSBuild target that copies **all** DLLs from `$(OutputPath)` to the main app's `bin/Plugins/<Name>` folder — NOT just the plugin's own DLL.
+
+## Why
+
+`CopyLocalLockFileAssemblies=true` copies NuGet transitive dependencies (e.g. `MonoTorrent.Client.dll`, `Ytdlp.NET.dll`) to the plugin's own build output folder.  
+If `DeployPlugin` only copies the plugin DLL by name, those NuGet DLLs are **not** deployed, and the app crashes at runtime with:
+
+> Unable to load one or more of the requested types. Could not load file or assembly 'MonoTorrent.Client, ...'. The system cannot find the file specified.
+
+## Correct Pattern
+
+```xml
+<Target Name="DeployPlugin" AfterTargets="Build">
+  <PropertyGroup>
+    <PluginsDir>$(MSBuildProjectDirectory)\..\TelegramAutoDownload\bin\$(Configuration)\net8.0-windows\Plugins\<FolderName></PluginsDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Wildcard: copies plugin DLL + ALL NuGet dependencies, excluding BasePlugins.dll (shared, already in app root) -->
+    <PluginOutputDlls Include="$(OutputPath)*.dll" Exclude="$(OutputPath)BasePlugins.dll" />
+  </ItemGroup>
+  <MakeDir Directories="$(PluginsDir)" />
+  <Copy SourceFiles="@(PluginOutputDlls)" DestinationFolder="$(PluginsDir)" SkipUnchangedFiles="true" />
+</Target>
+```
+
+## Wrong Pattern (never do this)
+
+```xml
+<!-- BAD: only copies the plugin DLL, NuGet dependencies are missing -->
+<Copy SourceFiles="$(OutputPath)TorrentPlugin.dll" DestinationFolder="$(PluginsDir)" />
+
+<!-- BAD: hardcoding specific dependency names breaks when packages update -->
+<Copy SourceFiles="$(OutputPath)Ytdlp.NET.dll" ... />
+```
+
+## After Modifying a Plugin
+
+Always rebuild the plugin project explicitly before launching the app:
+
+```powershell
+dotnet build TorrentPlugin/TorrentPlugin.csproj -c Release --no-incremental
+dotnet build SocialMediaPlugin/SocialMediaPlugin.csproj -c Release --no-incremental
+dotnet build YoutubePlugin/YoutubePlugin.csproj -c Release --no-incremental
+```
+
+The main app project build (`TelegramAutoDownload.csproj`) does NOT trigger `DeployPlugin` on the plugin sub-projects because they are referenced with `ReferenceOutputAssembly="false"`.
+
+## Publish Checklist
+
+The `CopyPluginsToPublishDir` target in `TelegramAutoDownload.csproj` handles releases.  
+For local dev runs, `DeployPlugin` in each plugin `.csproj` handles it.  
+Both must use the wildcard `*.dll` pattern — never hardcode individual DLL names.

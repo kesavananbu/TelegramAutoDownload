@@ -262,6 +262,19 @@ namespace TelegramAutoDownload
             }
         }
 
+        private void BtnClearStorage_Click(object sender, RoutedEventArgs e)
+        {
+            var path = txtDownloadPath.Text.Trim();
+            if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+            {
+                MessageBox.Show("Please set a valid Download Folder first.", "Clear Storage",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            var dlg = new ClearStorageDialog(path) { Owner = this };
+            dlg.ShowDialog();
+        }
+
         private void Hyperlink_RequestNavigate(object sender, RequestNavigateEventArgs e)
         {
             Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });

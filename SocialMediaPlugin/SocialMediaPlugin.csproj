@@ -13,14 +13,15 @@
     <ProjectReference Include="..\BasePlugin\BasePlugins.csproj" />
   </ItemGroup>
 
-  <!-- After each build, deploy the plugin DLLs to the main app's Plugins\SocialMedia folder -->
+  <!-- After each build, deploy the plugin DLLs + all NuGet dependencies to the main app's Plugins\SocialMedia folder -->
   <Target Name="DeployPlugin" AfterTargets="Build">
     <PropertyGroup>
       <PluginsDir>$(MSBuildProjectDirectory)\..\TelegramAutoDownload\bin\$(Configuration)\net8.0-windows\Plugins\SocialMedia</PluginsDir>
     </PropertyGroup>
+    <ItemGroup>
+      <SocialMediaOutputDlls Include="$(OutputPath)*.dll" Exclude="$(OutputPath)BasePlugins.dll" />
+    </ItemGroup>
     <MakeDir Directories="$(PluginsDir)" />
-    <Copy SourceFiles="$(OutputPath)SocialMediaPlugin.dll" DestinationFolder="$(PluginsDir)" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="$(OutputPath)Ytdlp.NET.dll" DestinationFolder="$(PluginsDir)" SkipUnchangedFiles="true"
-          Condition="Exists('$(OutputPath)Ytdlp.NET.dll')" />
+    <Copy SourceFiles="@(SocialMediaOutputDlls)" DestinationFolder="$(PluginsDir)" SkipUnchangedFiles="true" />
   </Target>
 </Project>
