@@ -1,6 +1,7 @@
 using MahApps.Metro.Controls;
 using Newtonsoft.Json;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
@@ -8,6 +9,7 @@ using System.Windows;
 using System.Windows.Navigation;
 using TelegramAutoDownload.Models;
 using TelegramClient;
+using TelegramClient.Models;
 
 namespace TelegramAutoDownload
 {
@@ -144,68 +146,71 @@ namespace TelegramAutoDownload
 
         private void BtnExport_Click(object sender, RoutedEventArgs e)
         {
-            var dialog = new SaveFileDialog
-            {
-                Title = "Export settings",
-                Filter = "JSON files (*.json)|*.json",
-                FileName = "TelegramAutoDownload-settings.json"
-            };
-            if (dialog.ShowDialog() != true) return;
-
-            // Export without sensitive credentials (AppId / ApiHash excluded)
-            var export = new ConfigParams
-            {
-                AppId = 0,
-                ApiHash = string.Empty,
-                BotToken = _config.BotToken,
-                ChatId = _config.ChatId,
-                PathSaveFile = _config.PathSaveFile,
-                DownloadThreads = _config.DownloadThreads,
-                NotifyOnStartup = _config.NotifyOnStartup,
-                NotifyOnProgress = _config.NotifyOnProgress,
-                NotifyOnComplete = _config.NotifyOnComplete,
-                NotifyOnError = _config.NotifyOnError,
-                Chats = _config.Chats
-            };
-            File.WriteAllText(dialog.FileName, JsonConvert.SerializeObject(export, Formatting.Indented));
-            MessageBox.Show("Settings exported successfully.\n(API credentials were excluded for security.)",
-                "Export", MessageBoxButton.OK, MessageBoxImage.Information);
+            var snapshot = BuildConfigSnapshotFromUi();
+            var json = JsonConvert.SerializeObject(snapshot, Formatting.Indented);
+            var preview = new ConfigJsonPreviewDialog(json) { Owner = this };
+            preview.ShowDialog();
         }
 
         private void BtnImport_Click(object sender, RoutedEventArgs e)
         {
-            var dialog = new OpenFileDialog
-            {
-                Title = "Import settings",
-                Filter = "JSON files (*.json)|*.json"
-            };
-            if (dialog.ShowDialog() != true) return;
+            var dlg = new ConfigImportDialog { Owner = this };
+            if (dlg.ShowDialog() != true || dlg.Imported == null) return;
 
             try
             {
-                var json = File.ReadAllText(dialog.FileName);
-                var imported = JsonConvert.DeserializeObject<ConfigParams>(json);
-                if (imported == null) throw new Exception("Invalid file format.");
-
-                // Preserve existing API credentials — import only non-secret settings
-                if (!string.IsNullOrWhiteSpace(imported.BotToken)) _config.BotToken = imported.BotToken;
-                if (!string.IsNullOrWhiteSpace(imported.ChatId)) _config.ChatId = imported.ChatId;
-                if (!string.IsNullOrWhiteSpace(imported.PathSaveFile)) _config.PathSaveFile = imported.PathSaveFile;
-                if (imported.DownloadThreads > 0) _config.DownloadThreads = imported.DownloadThreads;
-                _config.NotifyOnStartup = imported.NotifyOnStartup;
-                _config.NotifyOnProgress = imported.NotifyOnProgress;
-                _config.NotifyOnComplete = imported.NotifyOnComplete;
-                _config.NotifyOnError = imported.NotifyOnError;
-                if (imported.Chats?.Count > 0) _config.Chats = imported.Chats;
-                _config.NormalizeYtDlpQualityForAllChats();
-
+                ApplyImportedConfig(dlg.Imported);
                 LoadValues();
-                MessageBox.Show("Settings imported successfully.", "Import", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show("Settings imported into this window.\nClick Save to write them to disk.",
+                    "Import", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"Import failed: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        /// <summary>Full in-memory snapshot for export (includes Telegram API hash, bot token, chats).</summary>
+        private ConfigParams BuildConfigSnapshotFromUi()
+        {
+            _ = int.TryParse(txtAppId.Text.Trim(), out var appId);
+            var chats = _config.Chats != null ? new List<ChatDto>(_config.Chats) : new List<ChatDto>();
+            return new ConfigParams
+            {
+                AppId             = appId,
+                ApiHash           = pbApiHash.Password ?? string.Empty,
+                BotToken          = pbBotToken.Text ?? string.Empty,
+                ChatId            = txtChatId.Text?.Trim() ?? string.Empty,
+                PathSaveFile      = txtDownloadPath.Text?.Trim() ?? string.Empty,
+                DownloadThreads   = Math.Max(1, Math.Min(10, (int)sliderThreads.Value)),
+                NotifyOnStartup   = chkNotifyStartup.IsChecked == true,
+                NotifyOnProgress  = chkNotifyProgress.IsChecked == true,
+                NotifyOnComplete  = chkNotifyComplete.IsChecked == true,
+                NotifyOnError     = chkNotifyError.IsChecked == true,
+                Chats             = chats,
+            };
+        }
+
+        /// <summary>Merges an imported JSON config into the in-memory settings (used before Save).</summary>
+        private void ApplyImportedConfig(ConfigParams imported)
+        {
+            if (imported.AppId > 0)
+                _config.AppId = imported.AppId;
+            if (imported.ApiHash != null)
+                _config.ApiHash = imported.ApiHash;
+            _config.BotToken = imported.BotToken ?? string.Empty;
+            _config.ChatId = imported.ChatId ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(imported.PathSaveFile))
+                _config.PathSaveFile = imported.PathSaveFile;
+            if (imported.DownloadThreads >= 1 && imported.DownloadThreads <= 10)
+                _config.DownloadThreads = imported.DownloadThreads;
+            _config.NotifyOnStartup = imported.NotifyOnStartup;
+            _config.NotifyOnProgress = imported.NotifyOnProgress;
+            _config.NotifyOnComplete = imported.NotifyOnComplete;
+            _config.NotifyOnError = imported.NotifyOnError;
+            if (imported.Chats != null)
+                _config.Chats = imported.Chats;
+            _config.NormalizeYtDlpQualityForAllChats();
         }
 
         private void BtnViewLogs_Click(object sender, RoutedEventArgs e)
