@@ -54,12 +54,10 @@ namespace TelegramAutoDownload
 
             Log.Information("Application starting up");
 
-            // Apply saved theme before any window opens
-            var configFile = new ConfigFile();
+            // Light theme only (dark mode removed)
             try
             {
-                var config = configFile.Read();
-                ThemeManager.Current.ChangeTheme(this, config.DarkMode ? "Dark.Blue" : "Light.Blue");
+                ThemeManager.Current.ChangeTheme(this, "Light.Blue");
             }
             catch (Exception ex)
             {
@@ -69,6 +67,10 @@ namespace TelegramAutoDownload
             // System tray icon
             var contextMenu = new WinForms.ContextMenuStrip();
             contextMenu.Items.Add("Show", null, (_, __) => ShowMainWindow());
+            contextMenu.Items.Add("Logs…", null, (_, __) =>
+            {
+                new LogViewerWindow().Show();
+            });
             contextMenu.Items.Add(new WinForms.ToolStripSeparator());
             contextMenu.Items.Add("Exit", null, (_, __) => { TrayIcon?.Dispose(); Shutdown(); });
 
@@ -81,6 +83,8 @@ namespace TelegramAutoDownload
                 Visible = true
             };
             TrayIcon.DoubleClick += (_, __) => ShowMainWindow();
+
+            var configFile = new ConfigFile();
 
             // If a session file already exists the user is (very likely) already logged in.
             // Show a clean splash/loading screen instead of the login form.

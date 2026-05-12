@@ -2,130 +2,156 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:mah="http://metro.mahapps.com/winfx/xaml/controls"
-        Title="Folder Template"
-        Height="490" Width="620"
-        ResizeMode="NoResize"
+        Title="Folders for this chat"
+        Height="720" Width="680"
+        MinHeight="560" MinWidth="560"
+        ResizeMode="CanResizeWithGrip"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
 
-    <Grid Margin="18,14,18,14">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <!-- description -->
-            <RowDefinition Height="Auto"/>
-            <!-- template input -->
-            <RowDefinition Height="Auto"/>
-            <!-- token chips -->
-            <RowDefinition Height="Auto"/>
-            <!-- preview -->
-            <RowDefinition Height="Auto"/>
-            <!-- browse group -->
-            <RowDefinition Height="*"/>
-            <!-- spacer -->
-            <RowDefinition Height="Auto"/>
-            <!-- buttons -->
-        </Grid.RowDefinitions>
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="18,14">
+        <StackPanel>
 
-        <!-- ── Description ───────────────────────────────────────────────── -->
-        <TextBlock Grid.Row="0" Margin="0,0,0,14" TextWrapping="Wrap" Foreground="#444"
-                   Text="Customise where files from this chat are saved. Use tokens for dynamic paths (relative to the base download folder), or browse anywhere on your computer for a fixed location."/>
+            <TextBlock Margin="0,0,0,12" TextWrapping="Wrap" Foreground="#444"
+                       Text="Set where files from this chat are saved. The main template applies to native Telegram files (photos, videos, documents). Below, set optional subfolders for each link/provider plugin — all relative to your main download folder unless you use an absolute path in the main template only."/>
 
-        <!-- ── Template input ────────────────────────────────────────────── -->
-        <DockPanel Grid.Row="1" Margin="0,0,0,6">
-            <TextBlock DockPanel.Dock="Left" Text="Template:" Width="76"
-                       VerticalAlignment="Center" FontWeight="SemiBold"/>
-            <Button DockPanel.Dock="Right" Content="Reset" Width="58" Margin="8,0,0,0"
-                    Click="BtnReset_Click" ToolTip="Clear template — revert to default layout"/>
-            <TextBox x:Name="TxtTemplate"
-                     TextChanged="TxtTemplate_TextChanged"
-                     FontFamily="Consolas" FontSize="13"
-                     mah:TextBoxHelper.Watermark="e.g. {ChatName}/{Year}-{Month}"
-                     VerticalContentAlignment="Center"/>
-        </DockPanel>
+            <!-- Native Telegram files -->
+            <TextBlock Text="Native Telegram files" FontWeight="SemiBold" FontSize="14" Foreground="#1565C0" Margin="0,0,0,8"/>
 
-        <!-- ── Token chips ────────────────────────────────────────────────── -->
-        <Border Grid.Row="2" Background="#EEF6FF" CornerRadius="6" Padding="10,9" Margin="0,0,0,10">
-            <StackPanel>
-                <TextBlock Text="Click a token to insert it at the cursor:" FontWeight="SemiBold"
-                           Foreground="#1565C0" Margin="0,0,0,8"/>
-                <UniformGrid Rows="1" Columns="5">
-                    <StackPanel Margin="3">
-                        <Button Content="{}{Type}" Tag="{}{Type}" Click="Token_Click"
-                                Padding="6,4" FontFamily="Consolas" FontWeight="Bold"
-                                Background="#2196F3" Foreground="White" BorderThickness="0"/>
-                        <TextBlock Text="Videos / Photos / Music / Files" TextWrapping="Wrap"
-                                   FontSize="10" Foreground="#555" Margin="2,3,2,0"/>
-                    </StackPanel>
-                    <StackPanel Margin="3">
-                        <Button Content="{}{ChatName}" Tag="{}{ChatName}" Click="Token_Click"
-                                Padding="6,4" FontFamily="Consolas" FontWeight="Bold"
-                                Background="#4CAF50" Foreground="White" BorderThickness="0"/>
-                        <TextBlock Text="Chat display name" TextWrapping="Wrap"
-                                   FontSize="10" Foreground="#555" Margin="2,3,2,0"/>
-                    </StackPanel>
-                    <StackPanel Margin="3">
-                        <Button Content="{}{Year}" Tag="{}{Year}" Click="Token_Click"
-                                Padding="6,4" FontFamily="Consolas" FontWeight="Bold"
-                                Background="#FF9800" Foreground="White" BorderThickness="0"/>
-                        <TextBlock Text="4-digit year  (2026)" TextWrapping="Wrap"
-                                   FontSize="10" Foreground="#555" Margin="2,3,2,0"/>
-                    </StackPanel>
-                    <StackPanel Margin="3">
-                        <Button Content="{}{Month}" Tag="{}{Month}" Click="Token_Click"
-                                Padding="6,4" FontFamily="Consolas" FontWeight="Bold"
-                                Background="#FF9800" Foreground="White" BorderThickness="0"/>
-                        <TextBlock Text="2-digit month (01–12)" TextWrapping="Wrap"
-                                   FontSize="10" Foreground="#555" Margin="2,3,2,0"/>
-                    </StackPanel>
-                    <StackPanel Margin="3">
-                        <Button Content="{}{Day}" Tag="{}{Day}" Click="Token_Click"
-                                Padding="6,4" FontFamily="Consolas" FontWeight="Bold"
-                                Background="#FF9800" Foreground="White" BorderThickness="0"/>
-                        <TextBlock Text="2-digit day   (01–31)" TextWrapping="Wrap"
-                                   FontSize="10" Foreground="#555" Margin="2,3,2,0"/>
-                    </StackPanel>
-                </UniformGrid>
-            </StackPanel>
-        </Border>
-
-        <!-- ── Live preview ───────────────────────────────────────────────── -->
-        <Border Grid.Row="3" Background="#F8F8F8" BorderBrush="#DDD" BorderThickness="1"
-                CornerRadius="5" Padding="10,8" Margin="0,0,0,10">
-            <StackPanel>
-                <DockPanel Margin="0,0,0,4">
-                    <TextBlock Text="Preview" FontWeight="SemiBold"/>
-                    <TextBlock x:Name="TxtMode" DockPanel.Dock="Right" FontSize="11"
-                               Foreground="#888" VerticalAlignment="Center"/>
-                </DockPanel>
-                <TextBlock x:Name="TxtPreview" TextWrapping="Wrap" FontFamily="Consolas"
-                           FontSize="12" Foreground="#333"/>
-            </StackPanel>
-        </Border>
-
-        <!-- ── Browse for absolute path ──────────────────────────────────── -->
-        <GroupBox Grid.Row="4" Padding="10,8" Margin="0,0,0,0">
-            <GroupBox.Header>
-                <TextBlock Text=" Or pick any folder on this computer (absolute path) "
-                           FontWeight="SemiBold"/>
-            </GroupBox.Header>
-            <DockPanel>
-                <Button DockPanel.Dock="Right" Content="Browse…" Width="84" Margin="10,0,0,0"
-                        Click="BtnBrowse_Click"/>
-                <TextBlock x:Name="TxtAbsolutePath" VerticalAlignment="Center"
-                           Foreground="#666" TextTrimming="CharacterEllipsis"
-                           Text="No folder selected — template above will be used"/>
+            <DockPanel Margin="0,0,0,6">
+                <TextBlock DockPanel.Dock="Left" Text="Template:" Width="120"
+                           VerticalAlignment="Center" FontWeight="SemiBold"/>
+                <Button DockPanel.Dock="Right" Content="Reset" Width="58" Margin="8,0,0,0"
+                        Click="BtnReset_Click" ToolTip="Clear main template — revert to default layout"/>
+                <TextBox x:Name="TxtTemplate"
+                         TextChanged="TxtTemplate_TextChanged"
+                         FontFamily="Consolas" FontSize="13"
+                         mah:TextBoxHelper.Watermark="e.g. {ChatName}/{Year}-{Month}"
+                         VerticalContentAlignment="Center"/>
             </DockPanel>
-        </GroupBox>
 
-        <!-- ── Buttons ────────────────────────────────────────────────────── -->
-        <DockPanel Grid.Row="6" Margin="0,14,0,0">
-            <Button DockPanel.Dock="Right" Content="Cancel" Width="82" Margin="8,0,0,0"
-                    Click="BtnCancel_Click" IsCancel="True"/>
-            <Button DockPanel.Dock="Right" Content="OK" Width="82"
-                    Click="BtnOk_Click" IsDefault="True"
-                    Background="#2196F3" Foreground="White" BorderThickness="0"/>
-            <TextBlock VerticalAlignment="Center" FontSize="11" Foreground="#999"
-                       Text="Tokens are relative to the base download folder."/>
-        </DockPanel>
-    </Grid>
+            <Border Background="#EEF6FF" CornerRadius="6" Padding="10,9" Margin="0,0,0,10">
+                <StackPanel>
+                    <TextBlock Text="Insert into main template (click moves cursor into that field first):" FontWeight="SemiBold"
+                               Foreground="#1565C0" Margin="0,0,0,8"/>
+                    <UniformGrid Rows="1" Columns="5">
+                        <StackPanel Margin="3">
+                            <Button Content="{}{Type}" Tag="{}{Type}" Click="Token_Click"
+                                    Padding="6,4" FontFamily="Consolas" FontWeight="Bold"
+                                    Background="#2196F3" Foreground="White" BorderThickness="0"/>
+                            <TextBlock Text="Videos / Photos / Music / Files" TextWrapping="Wrap"
+                                       FontSize="10" Foreground="#555" Margin="2,3,2,0"/>
+                        </StackPanel>
+                        <StackPanel Margin="3">
+                            <Button Content="{}{ChatName}" Tag="{}{ChatName}" Click="Token_Click"
+                                    Padding="6,4" FontFamily="Consolas" FontWeight="Bold"
+                                    Background="#4CAF50" Foreground="White" BorderThickness="0"/>
+                            <TextBlock Text="Chat display name" TextWrapping="Wrap"
+                                       FontSize="10" Foreground="#555" Margin="2,3,2,0"/>
+                        </StackPanel>
+                        <StackPanel Margin="3">
+                            <Button Content="{}{Year}" Tag="{}{Year}" Click="Token_Click"
+                                    Padding="6,4" FontFamily="Consolas" FontWeight="Bold"
+                                    Background="#FF9800" Foreground="White" BorderThickness="0"/>
+                            <TextBlock Text="4-digit year" TextWrapping="Wrap"
+                                       FontSize="10" Foreground="#555" Margin="2,3,2,0"/>
+                        </StackPanel>
+                        <StackPanel Margin="3">
+                            <Button Content="{}{Month}" Tag="{}{Month}" Click="Token_Click"
+                                    Padding="6,4" FontFamily="Consolas" FontWeight="Bold"
+                                    Background="#FF9800" Foreground="White" BorderThickness="0"/>
+                            <TextBlock Text="2-digit month" TextWrapping="Wrap"
+                                       FontSize="10" Foreground="#555" Margin="2,3,2,0"/>
+                        </StackPanel>
+                        <StackPanel Margin="3">
+                            <Button Content="{}{Day}" Tag="{}{Day}" Click="Token_Click"
+                                    Padding="6,4" FontFamily="Consolas" FontWeight="Bold"
+                                    Background="#FF9800" Foreground="White" BorderThickness="0"/>
+                            <TextBlock Text="2-digit day" TextWrapping="Wrap"
+                                       FontSize="10" Foreground="#555" Margin="2,3,2,0"/>
+                        </StackPanel>
+                    </UniformGrid>
+                </StackPanel>
+            </Border>
+
+            <Border Background="#F8F8F8" BorderBrush="#DDD" BorderThickness="1"
+                    CornerRadius="5" Padding="10,8" Margin="0,0,0,10">
+                <StackPanel>
+                    <DockPanel Margin="0,0,0,4">
+                        <TextBlock Text="Preview (native)" FontWeight="SemiBold"/>
+                        <TextBlock x:Name="TxtMode" DockPanel.Dock="Right" FontSize="11"
+                                   Foreground="#888" VerticalAlignment="Center"/>
+                    </DockPanel>
+                    <TextBlock x:Name="TxtPreview" TextWrapping="Wrap" FontFamily="Consolas"
+                               FontSize="12" Foreground="#333"/>
+                </StackPanel>
+            </Border>
+
+            <GroupBox Padding="10,8" Margin="0,0,0,12">
+                <GroupBox.Header>
+                    <TextBlock Text="Or pick a fixed folder for native files (absolute path)" FontWeight="SemiBold"/>
+                </GroupBox.Header>
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="Browse…" Width="84" Margin="10,0,0,0"
+                            Click="BtnBrowse_Click"/>
+                    <TextBlock x:Name="TxtAbsolutePath" VerticalAlignment="Center"
+                               Foreground="#666" TextTrimming="CharacterEllipsis"
+                               Text="No folder selected — template above will be used"/>
+                </DockPanel>
+            </GroupBox>
+
+            <!-- Per-provider URL paths -->
+            <TextBlock Text="Links &amp; plugins (per provider)" FontWeight="SemiBold" FontSize="14" Foreground="#1565C0" Margin="0,8,0,4"/>
+            <TextBlock TextWrapping="Wrap" Foreground="#666" FontSize="11" Margin="0,0,0,8">
+                Tokens <Run FontFamily="Consolas">{Platform}</Run> and <Run FontFamily="Consolas">{ChatName}</Run> (e.g. TikTok, YouTube). Leave empty for the app default for that provider. Click a token to insert into the field that has keyboard focus.
+            </TextBlock>
+
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                <Button Content="{}{Platform}" Tag="{}{Platform}" Click="UrlProviderToken_Click" Margin="0,0,6,0"
+                        Padding="8,4" FontFamily="Consolas" FontWeight="Bold" Background="#607D8B" Foreground="White" BorderThickness="0"/>
+                <Button Content="{}{ChatName}" Tag="{}{ChatName}" Click="UrlProviderToken_Click"
+                        Padding="8,4" FontFamily="Consolas" FontWeight="Bold" Background="#607D8B" Foreground="White" BorderThickness="0"/>
+            </StackPanel>
+
+            <Grid Margin="0,0,0,6">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="132"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Social (SO)" VerticalAlignment="Center" Margin="0,4"/>
+                <TextBox x:Name="TxtSocialTemplate" Grid.Row="0" Grid.Column="1" Margin="8,4,0,4" FontFamily="Consolas"
+                         mah:TextBoxHelper.Watermark="{}{Platform}/{ChatName}"/>
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="YouTube" VerticalAlignment="Center" Margin="0,4"/>
+                <TextBox x:Name="TxtYoutubeTemplate" Grid.Row="1" Grid.Column="1" Margin="8,4,0,4" FontFamily="Consolas"
+                         mah:TextBoxHelper.Watermark="{}{Platform}/{ChatName}"/>
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="Direct (DL)" VerticalAlignment="Center" Margin="0,4"/>
+                <TextBox x:Name="TxtOtherTemplate" Grid.Row="2" Grid.Column="1" Margin="8,4,0,4" FontFamily="Consolas"
+                         mah:TextBoxHelper.Watermark="{}{Platform}/{ChatName}"/>
+
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="Torrent (TR)" VerticalAlignment="Center" Margin="0,4"/>
+                <TextBox x:Name="TxtTorrentTemplate" Grid.Row="3" Grid.Column="1" Margin="8,4,0,4" FontFamily="Consolas"
+                         mah:TextBoxHelper.Watermark="{}{Platform}/{ChatName}"/>
+            </Grid>
+
+            <DockPanel Margin="0,16,0,0">
+                <Button DockPanel.Dock="Right" Content="Cancel" Width="82" Margin="8,0,0,0"
+                        Click="BtnCancel_Click" IsCancel="True"/>
+                <Button DockPanel.Dock="Right" Content="OK" Width="82"
+                        Click="BtnOk_Click" IsDefault="True"
+                        Background="#2196F3" Foreground="White" BorderThickness="0"/>
+                <TextBlock VerticalAlignment="Center" FontSize="11" Foreground="#999"
+                           TextWrapping="Wrap"
+                           Text="Main template: {Type}, {ChatName}, dates. URL rows: {Platform}, {ChatName} only."/>
+            </DockPanel>
+        </StackPanel>
+    </ScrollViewer>
 </mah:MetroWindow>

@@ -92,12 +92,20 @@ namespace TelegramAutoDownload.UITests
         [UIFact]
         public void SyncButton_IsPresent_AndEnabled()
         {
+            var byId = MainWindow.FindFirstDescendant(cf =>
+                cf.ByAutomationId("ChatHistorySyncButton"))?.AsButton();
+            if (byId != null)
+            {
+                byId.IsEnabled.Should().BeTrue("the Sync button must be enabled when visible");
+                return;
+            }
+
             var buttons = MainWindow.FindAllDescendants(cf => cf.ByControlType(ControlType.Button));
             var syncButton = buttons.FirstOrDefault(b =>
                 b.Name?.Contains("Sync", StringComparison.OrdinalIgnoreCase) == true ||
                 b.AutomationId?.Contains("Sync", StringComparison.OrdinalIgnoreCase) == true);
 
-            syncButton.Should().NotBeNull("a Sync button must exist in the main window");
+            syncButton.Should().NotBeNull("a Sync button must exist in the main window (add a monitored chat if the list is empty)");
             syncButton!.IsEnabled.Should().BeTrue("the Sync button must be enabled when the app starts");
         }
 
@@ -116,42 +124,19 @@ namespace TelegramAutoDownload.UITests
             settingsButton.Should().NotBeNull("a Settings button must exist");
             settingsButton!.AsButton().Click();
 
-            Thread.Sleep(500); // give the settings window time to open
+            // Modal / slow machines: poll for the settings window instead of assuming an extra top-level count.
+            Window? settingsWindow = null;
+            for (var i = 0; i < 40; i++)
+            {
+                settingsWindow = App.GetAllTopLevelWindows(Automation).FirstOrDefault(w =>
+                    w.Title?.Contains("Settings", StringComparison.OrdinalIgnoreCase) == true);
+                if (settingsWindow != null) break;
+                Thread.Sleep(250);
+            }
 
-            var windows = App.GetAllTopLevelWindows(Automation);
-            windows.Should().HaveCountGreaterThan(1,
-                "clicking Settings must open a new window");
-
-            // Close settings so it doesn't interfere with other tests
-            var settingsWindow = windows.FirstOrDefault(w =>
-                w.Title?.Contains("Setting", StringComparison.OrdinalIgnoreCase) == true);
-            settingsWindow?.Close();
+            settingsWindow.Should().NotBeNull("clicking Settings must open the Settings window");
+            try { settingsWindow!.Close(); } catch { /* ignore if already closed */ }
         }
 
-        // ---------------------------------------------------------------------------
-        // Quality ComboBox (only visible if chats are configured)
-        // ---------------------------------------------------------------------------
-
-        [UIFact]
-        public void QualityComboBox_IfPresent_ContainsExpectedOptions()
-        {
-            var combos = MainWindow.FindAllDescendants(cf =>
-                cf.ByControlType(ControlType.ComboBox));
-
-            // No chats configured — test is not applicable, pass silently
-            if (!combos.Any()) return;
-
-            var qualityCombo = combos.FirstOrDefault(c =>
-                c.Name?.Contains("Quality", StringComparison.OrdinalIgnoreCase) == true ||
-                c.AutomationId?.Contains("Quality", StringComparison.OrdinalIgnoreCase) == true);
-
-            if (qualityCombo == null) return;
-
-            var itemNames = qualityCombo.AsComboBox().Items.Select(i => i.Text).ToList();
-
-            itemNames.Should().Contain("best",  "the 'best' quality option must always be present");
-            itemNames.Should().Contain("1080p", "the '1080p' option must always be present");
-            itemNames.Should().Contain("audio", "the 'audio' option must always be present");
-        }
     }
 }

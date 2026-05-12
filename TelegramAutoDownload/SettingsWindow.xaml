@@ -169,17 +169,6 @@ Enable this only if you want to receive a Telegram message when a download finis
                 <Border Background="#F5F5F5" CornerRadius="6" Padding="16,12" Margin="0,0,0,8">
                     <StackPanel>
 
-                        <!-- Dark Mode -->
-                        <DockPanel Margin="0,0,0,16">
-                            <StackPanel DockPanel.Dock="Left">
-                                <TextBlock Text="Dark Mode" FontWeight="SemiBold"/>
-                                <TextBlock Text="Switch the app theme to dark." Foreground="#888" FontSize="11"/>
-                            </StackPanel>
-                            <ToggleButton x:Name="toggleDarkMode" HorizontalAlignment="Right"
-                                          Style="{DynamicResource MahApps.Styles.ToggleButton.Switch}"
-                                          Checked="ToggleDarkMode_Changed" Unchecked="ToggleDarkMode_Changed"/>
-                        </DockPanel>
-
                         <TextBlock Text="Download Folder" FontWeight="SemiBold" Margin="0,0,0,4"/>
                         <DockPanel>
                             <Button DockPanel.Dock="Right" Content="Browse…" Height="32" Width="72"
@@ -197,6 +186,10 @@ Enable this only if you want to receive a Telegram message when a download finis
                                     IsSnapToTickEnabled="True" TickFrequency="1"
                                     ValueChanged="SliderThreads_ValueChanged"/>
                         </DockPanel>
+
+                        <Button x:Name="btnViewLogs" Content="View application logs…" Height="32"
+                                HorizontalAlignment="Left" Margin="0,8,0,4"
+                                Click="BtnViewLogs_Click"/>
 
                         <!-- Storage maintenance -->
                         <Separator Margin="0,12,0,12"/>

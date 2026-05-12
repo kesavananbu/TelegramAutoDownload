@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using TelegramAutoDownload.Models;
+using TelegramClient.Factory.FactoriesMessages.Enum;
 using TelegramClient.Factory.Service;
 using TelegramClient.Models;
 using TL;
@@ -126,7 +127,7 @@ namespace TelegramClient
         {
             _configParams = configParams;
             var chatIds = configParams.Chats?.Select(c => c.Id).ToList() ?? new List<long>();
-            factoryService = new FactoryMessagesService(Client, configParams.PathSaveFile);
+            factoryService = new FactoryMessagesService(Client, configParams.PathSaveFile ?? string.Empty);
             factoryService.OnProgress = OnProgress;
             factoryService.OnComplete = OnComplete;
             factoryService.RefreshMessage = RefreshMessageAsync;
@@ -593,6 +594,46 @@ namespace TelegramClient
         }
 
         /// <summary>
+        /// Resolves a chat/channel/user to an <see cref="InputPeer"/> for history API calls.
+        /// </summary>
+        private async Task<InputPeer?> ResolveInputPeerAsync(ChatDto chatDto)
+        {
+            if (_accessHashes.TryGetValue(chatDto.Id, out var hash))
+            {
+                if (string.Equals(chatDto.Type, "User", StringComparison.OrdinalIgnoreCase))
+                    return new InputPeerUser(chatDto.Id, hash);
+                if (hash == 0)
+                    return new InputPeerChat(chatDto.Id);
+                return new InputPeerChannel(chatDto.Id, hash);
+            }
+
+            var dialogsResult = await Client.Messages_GetDialogs(
+                offset_date: default, offset_id: 0, offset_peer: null!, limit: 500, hash: 0);
+            if (dialogsResult is not TL.Messages_Dialogs dlg)
+                return null;
+
+            if (dlg.chats.TryGetValue(chatDto.Id, out var cb) && cb is TL.Channel tgCh)
+            {
+                _accessHashes[chatDto.Id] = tgCh.access_hash;
+                return new InputPeerChannel(chatDto.Id, tgCh.access_hash);
+            }
+
+            if (dlg.chats.TryGetValue(chatDto.Id, out var grp) && grp is TL.Chat)
+            {
+                _accessHashes[chatDto.Id] = 0;
+                return new InputPeerChat(chatDto.Id);
+            }
+
+            if (dlg.users.TryGetValue(chatDto.Id, out var tgUsr) && tgUsr is TL.User u)
+            {
+                _accessHashes[chatDto.Id] = u.access_hash;
+                return new InputPeerUser(chatDto.Id, u.access_hash);
+            }
+
+            return null;
+        }
+
+        /// <summary>
         /// Fetches the most recent <paramref name="count"/> messages from Telegram for a chat.
         /// Returns them newest-first. Returns an empty list if the peer cannot be resolved
         /// (e.g. not yet connected) or on error.
@@ -601,37 +642,7 @@ namespace TelegramClient
         {
             try
             {
-                InputPeer? peer = null;
-                if (_accessHashes.TryGetValue(chatDto.Id, out var hash))
-                {
-                    peer = hash != 0
-                        ? new InputPeerChannel(chatDto.Id, hash)
-                        : new InputPeerChat(chatDto.Id);
-                }
-                else
-                {
-                    var dialogsResult = await Client.Messages_GetDialogs(
-                        offset_date: default, offset_id: 0, offset_peer: null!, limit: 500, hash: 0);
-                    if (dialogsResult is TL.Messages_Dialogs dlg)
-                    {
-                        if (dlg.chats.TryGetValue(chatDto.Id, out var cb) && cb is TL.Channel tgCh)
-                        {
-                            _accessHashes[chatDto.Id] = tgCh.access_hash;
-                            peer = new InputPeerChannel(chatDto.Id, tgCh.access_hash);
-                        }
-                        else if (dlg.chats.TryGetValue(chatDto.Id, out var grp) && grp is TL.Chat)
-                        {
-                            _accessHashes[chatDto.Id] = 0;
-                            peer = new InputPeerChat(chatDto.Id);
-                        }
-                        else if (dlg.users.TryGetValue(chatDto.Id, out var tgUsr) && tgUsr is TL.User u)
-                        {
-                            _accessHashes[chatDto.Id] = u.access_hash;
-                            peer = new InputPeerUser(chatDto.Id, u.access_hash);
-                        }
-                    }
-                }
-
+                var peer = await ResolveInputPeerAsync(chatDto).ConfigureAwait(false);
                 if (peer == null) return [];
 
                 var history = await Client.Messages_GetHistory(peer, limit: count);
@@ -675,6 +686,144 @@ namespace TelegramClient
                 System.Diagnostics.Debug.WriteLine($"GetRecentMessagesAsync failed: {ex.Message}");
                 return [];
             }
+        }
+
+        /// <summary>One page of messages for the manual browse window (newest first when <paramref name="offsetId"/> is 0).</summary>
+        public async Task<(IReadOnlyList<Message> Messages, int NextOffsetId, bool HasMore)> FetchBrowseHistoryPageAsync(
+            ChatDto chatDto, int offsetId, int pageSize = 50)
+        {
+            try
+            {
+                var peer = await ResolveInputPeerAsync(chatDto).ConfigureAwait(false);
+                if (peer == null)
+                    return (Array.Empty<Message>(), offsetId, false);
+
+                var history = await Client.Messages_GetHistory(peer, offset_id: offsetId, limit: pageSize)
+                    .ConfigureAwait(false);
+                if (history.Messages.Length == 0)
+                    return (Array.Empty<Message>(), offsetId, false);
+
+                var page = history.Messages.OfType<Message>().ToList();
+                var nextOffset = history.Messages.Min(m => m.ID);
+                var hasMore = history.Messages.Length >= pageSize;
+                return (page, nextOffset, hasMore);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"FetchBrowseHistoryPageAsync failed: {ex.Message}");
+                return (Array.Empty<Message>(), offsetId, false);
+            }
+        }
+
+        /// <summary>
+        /// Downloads the given messages using the same pipeline as Sync (media, URL plugins, filter text capture).
+        /// When <paramref name="forBrowseWindow"/> is true, uses a relaxed <see cref="ChatDto"/> clone so manual
+        /// picks work even if the chat is not monitored (Selected) or download-type toggles are off.
+        /// </summary>
+        public async Task ManualDownloadMessagesAsync(
+            ChatDto chatDto,
+            IEnumerable<Message> messages,
+            bool forBrowseWindow = false)
+        {
+            if (factoryService == null)
+                throw new InvalidOperationException("Telegram client is not configured yet.");
+
+            var execDto = forBrowseWindow ? CloneChatDtoForBrowseManualDownload(chatDto) : chatDto;
+
+            foreach (var msg in messages)
+            {
+                await _semaphore.WaitAsync().ConfigureAwait(false);
+                try
+                {
+                    var preview = GetPreviewFileName(msg);
+                    if (preview != null)
+                        OnEnqueued?.Invoke(chatDto.Name, msg.ID, preview);
+
+                    OnStarted?.Invoke(chatDto.Name, msg.ID);
+
+                    ResultExecute result;
+                    var isTextCapture = preview == null && msg.media == null && chatDto.IgnoreFileByRegex.Count > 0 &&
+                        !string.IsNullOrEmpty(msg.message) &&
+                        chatDto.IgnoreFileByRegex.Any(p =>
+                            System.Text.RegularExpressions.Regex.IsMatch(
+                                msg.message, p,
+                                System.Text.RegularExpressions.RegexOptions.IgnoreCase));
+
+                    if (isTextCapture)
+                        result = await SaveCapturedTextAsync(msg, chatDto).ConfigureAwait(false);
+                    else
+                        result = await factoryService.ExecuteDirectAsync(msg, execDto).ConfigureAwait(false);
+
+                    // Browse window: plain text (no URL) that no plugin handled — save under …/Messages like filter capture.
+                    if (forBrowseWindow && !result.IsSuccess && preview == null && msg.media == null && !isTextCapture &&
+                        !string.IsNullOrWhiteSpace(msg.message) &&
+                        !msg.message.Contains("http", StringComparison.OrdinalIgnoreCase))
+                        result = await SaveCapturedTextAsync(msg, chatDto).ConfigureAwait(false);
+
+                    if (result.IsSuccess && !string.IsNullOrEmpty(result.ErrorMessage))
+                        OnSkipped?.Invoke(chatDto.Name, msg.ID);
+                    else if (result.IsSuccess && string.IsNullOrEmpty(result.ErrorMessage) && OnSaved != null)
+                    {
+                        await OnSaved.Invoke(new ResultMessageEvent
+                        {
+                            Chat          = chatDto,
+                            Message       = msg.message ?? string.Empty,
+                            PostAuthor    = msg.post_author,
+                            ResultExecute = result,
+                        }).ConfigureAwait(false);
+                    }
+                }
+                finally
+                {
+                    _semaphore.Release();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Copy of <see cref="ChatDto"/> with all native download types on and URL plugins enabled when the key was missing.
+        /// Does not mutate the original config row.
+        /// </summary>
+        private static ChatDto CloneChatDtoForBrowseManualDownload(ChatDto source)
+        {
+            var plugins = new Dictionary<string, bool>(
+                source.EnabledPlugins,
+                StringComparer.OrdinalIgnoreCase);
+            foreach (var key in new[] { "SocialMedia", "YouTube", "Other", "Torrent" })
+            {
+                if (!plugins.ContainsKey(key))
+                    plugins[key] = true;
+            }
+
+            return new ChatDto
+            {
+                Id               = source.Id,
+                Name             = source.Name,
+                Username         = source.Username,
+                Type             = source.Type,
+                Selected         = source.Selected,
+                NameLower        = source.NameLower,
+                UsernameLower    = source.UsernameLower,
+                ReactionIcon     = source.ReactionIcon,
+                DownloadStartIcon = source.DownloadStartIcon,
+                MembersCount     = source.MembersCount,
+                Muted            = source.Muted,
+                Download         = new Download { Videos = true, Photos = true, Music = true, Files = true },
+                DownloadFromSize = source.DownloadFromSize,
+                IgnoreFileByRegex = new List<string>(source.IgnoreFileByRegex),
+                EnabledPlugins   = plugins,
+                YtdlpQuality     = source.YtdlpQuality,
+                FolderTemplate   = source.FolderTemplate,
+                SocialDownloadFolderTemplate = source.SocialDownloadFolderTemplate,
+                YoutubeDownloadFolderTemplate = source.YoutubeDownloadFolderTemplate,
+                OtherDownloadFolderTemplate = source.OtherDownloadFolderTemplate,
+                TorrentDownloadFolderTemplate = source.TorrentDownloadFolderTemplate,
+                SaveHistory      = source.SaveHistory,
+                HistoryIcon      = source.HistoryIcon,
+                AvailableReactions = source.AvailableReactions != null
+                    ? new List<string>(source.AvailableReactions)
+                    : null,
+            };
         }
 
         /// <summary>
@@ -895,10 +1044,42 @@ namespace TelegramClient
             }
         }
 
+        /// <summary>Whether the chat's download toggles allow this message's native media.</summary>
+        public static bool IsDownloadTypeEnabledForMessage(Message msg, ChatDto chatDto) =>
+            IsMessageTypeEnabled(msg, chatDto);
+
+        /// <summary>Short label when the message has native file/photo media (for browse UI).</summary>
+        public static string? GetDownloadPreviewLabel(Message msg) =>
+            GetPreviewFileName(msg);
+
         /// <summary>
-        /// Extracts a display filename from a message for queue preview.
-        /// Returns null if the message has no downloadable media.
+        /// Whether the user can queue this message from the browse window (ignores Selected / download toggles).
+        /// Any non-empty text, native downloadable media, or other media (e.g. link preview) can be queued;
+        /// execution still follows normal routing (Photos/Videos/…/plugins); plain text with no URL falls back
+        /// to saving a .txt under Messages when no plugin handles it.
         /// </summary>
+        public static bool CanSelectMessageForManualBrowse(Message msg, ChatDto _) =>
+            GetPreviewFileName(msg) != null
+            || !string.IsNullOrWhiteSpace(msg.message)
+            || msg.media != null;
+
+        /// <summary>Whether the user can queue this message for manual download from the browse window.</summary>
+        public static bool CanSelectMessageForManualDownload(Message msg, ChatDto chat)
+        {
+            if (GetPreviewFileName(msg) != null && IsMessageTypeEnabled(msg, chat))
+                return true;
+            if (!string.IsNullOrEmpty(msg.message) &&
+                msg.message.Contains("http", StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (msg.media == null && chat.IgnoreFileByRegex.Count > 0 && !string.IsNullOrEmpty(msg.message) &&
+                chat.IgnoreFileByRegex.Any(p =>
+                    System.Text.RegularExpressions.Regex.IsMatch(
+                        msg.message, p,
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase)))
+                return true;
+            return false;
+        }
+
         /// <summary>
         /// Returns true if the message's media type is enabled in the chat's download settings.
         /// Used to skip enqueuing and downloading messages whose type the user has not selected.
@@ -916,15 +1097,26 @@ namespace TelegramClient
                         audio.flags.HasFlag(DocumentAttributeAudio.Flags.voice)) == true) return false;
 
                 var mime = doc.mime_type ?? string.Empty;
-                if (mime.Contains("image")) return chatDto.Download.Photos;
-                if (mime.Contains("video")) return chatDto.Download.Videos;
-                if (mime.Contains("audio")) return chatDto.Download.Music;
-                return chatDto.Download.Files;
+                if (mime.Contains("image", StringComparison.OrdinalIgnoreCase)) return chatDto.Download.Photos;
+                if (mime.Contains("video", StringComparison.OrdinalIgnoreCase)) return chatDto.Download.Videos;
+                if (mime.Contains("audio", StringComparison.OrdinalIgnoreCase)) return chatDto.Download.Music;
+
+                var kind = DocumentMediaKindHelper.GetMessageType(doc);
+                return kind switch
+                {
+                    MessageTypes.Photos => chatDto.Download.Photos,
+                    MessageTypes.Videos => chatDto.Download.Videos,
+                    MessageTypes.Music  => chatDto.Download.Music,
+                    _                     => chatDto.Download.Files
+                };
             }
 
             return false;
         }
 
+        /// <summary>
+        /// Display filename for queue preview. Returns null if the message has no native downloadable media.
+        /// </summary>
         private static string? GetPreviewFileName(Message msg)
         {
             if (msg.media is MessageMediaDocument { document: Document doc })
@@ -949,11 +1141,6 @@ namespace TelegramClient
         private ChatDto? FindMonitoredChat(long peerId) =>
             _configParams?.Chats?.FirstOrDefault(c => c.Id == peerId || c.Id == -peerId);
 
-        /// <summary>
-        /// Fetches recent history for a channel/chat and downloads any messages
-        /// that arrived after the last live update we processed (using _highWatermark).
-        /// Called when Telegram sends UpdateChannelTooLong.
-        /// </summary>
         /// <summary>
         /// Saves the text content of a message that matched a Filter regex pattern to a .txt file.
         /// The file is placed under {basePath}/{chatFolder}/Messages/{yyyyMMdd_HHmmss}_{id}.txt.

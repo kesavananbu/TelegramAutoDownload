@@ -1,8 +1,10 @@
 using System;
 using System.IO;
 using System.Windows;
+using System.Windows.Controls;
 using MahApps.Metro.Controls;
 using TelegramClient;
+using TelegramClient.Models;
 
 namespace TelegramAutoDownload
 {
@@ -13,50 +15,50 @@ namespace TelegramAutoDownload
         private readonly string _chatType;
         private bool _suppressUpdate;
 
-        /// <summary>Final template value chosen by the user — read this after DialogResult == true.</summary>
+        /// <summary>Main native-folder template — read after DialogResult == true.</summary>
         public string ResultTemplate { get; private set; } = string.Empty;
 
-        public FolderTemplateDialog(
-            string currentTemplate,
-            string chatName,
-            string chatType,
-            string basePath)
+        public string ResultSocialDownloadFolderTemplate { get; private set; } = string.Empty;
+        public string ResultYoutubeDownloadFolderTemplate { get; private set; } = string.Empty;
+        public string ResultOtherDownloadFolderTemplate { get; private set; } = string.Empty;
+        public string ResultTorrentDownloadFolderTemplate { get; private set; } = string.Empty;
+
+        public FolderTemplateDialog(ChatDto chat, string basePath)
         {
             InitializeComponent();
 
-            _basePath  = basePath;
-            _chatName  = chatName;
-            _chatType  = chatType;
+            _basePath  = basePath ?? string.Empty;
+            _chatName  = chat.Name ?? string.Empty;
+            _chatType  = chat.Type ?? "Other";
 
             _suppressUpdate = true;
-            TxtTemplate.Text = currentTemplate;
+            TxtTemplate.Text = chat.FolderTemplate ?? string.Empty;
+            TxtSocialTemplate.Text = chat.SocialDownloadFolderTemplate ?? string.Empty;
+            TxtYoutubeTemplate.Text = chat.YoutubeDownloadFolderTemplate ?? string.Empty;
+            TxtOtherTemplate.Text = chat.OtherDownloadFolderTemplate ?? string.Empty;
+            TxtTorrentTemplate.Text = chat.TorrentDownloadFolderTemplate ?? string.Empty;
             _suppressUpdate = false;
 
-            // If the current value is already an absolute path, show it in the browse label too
-            if (Path.IsPathRooted(currentTemplate))
-                TxtAbsolutePath.Text = currentTemplate;
+            var main = chat.FolderTemplate ?? string.Empty;
+            if (Path.IsPathRooted(main))
+                TxtAbsolutePath.Text = main;
 
             UpdatePreview();
         }
 
-        // ── Token buttons ────────────────────────────────────────────────────
-
         private void Token_Click(object sender, RoutedEventArgs e)
         {
-            if (sender is not System.Windows.Controls.Button btn) return;
+            if (sender is not Button btn) return;
             var token = btn.Tag as string ?? string.Empty;
 
-            // Capture position and current text BEFORE any modification
             var pos     = TxtTemplate.CaretIndex;
             var current = TxtTemplate.Text ?? string.Empty;
 
-            // If the field shows an absolute path, clear the browse-area label
-            // but keep the text so the token is appended at the cursor
             if (Path.IsPathRooted(current))
                 TxtAbsolutePath.Text = "No folder selected — template above will be used";
 
             _suppressUpdate = true;
-            TxtTemplate.Text = current.Insert(pos, token);
+            TxtTemplate.Text = current.Insert(Math.Clamp(pos, 0, current.Length), token);
             _suppressUpdate = false;
 
             TxtTemplate.CaretIndex = pos + token.Length;
@@ -64,13 +66,35 @@ namespace TelegramAutoDownload
             UpdatePreview();
         }
 
-        // ── Template text box ────────────────────────────────────────────────
+        private void UrlProviderToken_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button btn) return;
+            var token = btn.Tag as string ?? string.Empty;
+            var target = GetFocusedUrlTemplateBox();
+            if (target == null) return;
 
-        private void TxtTemplate_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+            var pos     = target.CaretIndex;
+            var current = target.Text ?? string.Empty;
+            _suppressUpdate = true;
+            target.Text = current.Insert(Math.Clamp(pos, 0, current.Length), token);
+            _suppressUpdate = false;
+            target.CaretIndex = pos + token.Length;
+            target.Focus();
+        }
+
+        private TextBox? GetFocusedUrlTemplateBox()
+        {
+            if (TxtSocialTemplate.IsKeyboardFocusWithin) return TxtSocialTemplate;
+            if (TxtYoutubeTemplate.IsKeyboardFocusWithin) return TxtYoutubeTemplate;
+            if (TxtOtherTemplate.IsKeyboardFocusWithin) return TxtOtherTemplate;
+            if (TxtTorrentTemplate.IsKeyboardFocusWithin) return TxtTorrentTemplate;
+            return TxtSocialTemplate;
+        }
+
+        private void TxtTemplate_TextChanged(object sender, TextChangedEventArgs e)
         {
             if (_suppressUpdate) return;
 
-            // If user typed a rooted path by hand, reflect it in the browse label
             var text = TxtTemplate.Text?.Trim() ?? string.Empty;
             if (Path.IsPathRooted(text))
                 TxtAbsolutePath.Text = text;
@@ -80,26 +104,22 @@ namespace TelegramAutoDownload
             UpdatePreview();
         }
 
-        // ── Reset ────────────────────────────────────────────────────────────
-
         private void BtnReset_Click(object sender, RoutedEventArgs e)
         {
             TxtTemplate.Text = string.Empty;
             TxtAbsolutePath.Text = "No folder selected — template above will be used";
+            UpdatePreview();
         }
-
-        // ── Browse ───────────────────────────────────────────────────────────
 
         private void BtnBrowse_Click(object sender, RoutedEventArgs e)
         {
             using var dialog = new System.Windows.Forms.FolderBrowserDialog
             {
-                Description       = "Select download folder for this chat",
+                Description            = "Select download folder for native Telegram files from this chat",
                 UseDescriptionForTitle = true,
                 ShowNewFolderButton    = true,
             };
 
-            // Open in the currently configured base path if available
             if (!string.IsNullOrWhiteSpace(_basePath) && Directory.Exists(_basePath))
                 dialog.InitialDirectory = _basePath;
 
@@ -109,16 +129,13 @@ namespace TelegramAutoDownload
                 TxtAbsolutePath.Text = picked;
 
                 _suppressUpdate = true;
-                TxtTemplate.Text = picked;   // absolute path becomes the full template
+                TxtTemplate.Text = picked;
                 _suppressUpdate = false;
 
                 UpdatePreview();
             }
         }
 
-        // ── Preview ──────────────────────────────────────────────────────────
-
-        // Sample media type used in the preview — matches what {Type} resolves to at download time.
         private const string PreviewMediaType = "Videos";
 
         private void UpdatePreview()
@@ -127,44 +144,39 @@ namespace TelegramAutoDownload
 
             if (string.IsNullOrEmpty(template))
             {
-                // Real default layout: {basePath}/{MediaType}/{ChatName}
-                // Show "Videos" as a representative example since the actual type varies per file.
                 TxtPreview.Text = Path.Combine(_basePath, PreviewMediaType, _chatName)
                                   + "  (Videos / Photos / Music / Files)";
                 TxtMode.Text    = "mode: default";
                 return;
             }
 
-            // Always resolve tokens (works for both relative and absolute paths)
             var sampleDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, DateTime.Now.Day);
             var resolved   = FolderTemplateHelper.Resolve(template, PreviewMediaType, _chatName, sampleDate)
                              ?? Path.Combine(PreviewMediaType, _chatName);
 
             if (Path.IsPathRooted(resolved))
             {
-                // Absolute path (with tokens already substituted)
                 TxtPreview.Text = resolved;
                 TxtMode.Text    = "mode: absolute path";
             }
             else
             {
-                // Relative template — combine with base path
                 TxtPreview.Text = Path.Combine(_basePath, resolved);
                 TxtMode.Text    = "mode: template";
             }
         }
 
-        // ── OK / Cancel ──────────────────────────────────────────────────────
-
         private void BtnOk_Click(object sender, RoutedEventArgs e)
         {
             ResultTemplate = TxtTemplate.Text?.Trim() ?? string.Empty;
+            ResultSocialDownloadFolderTemplate = TxtSocialTemplate.Text?.Trim() ?? string.Empty;
+            ResultYoutubeDownloadFolderTemplate = TxtYoutubeTemplate.Text?.Trim() ?? string.Empty;
+            ResultOtherDownloadFolderTemplate = TxtOtherTemplate.Text?.Trim() ?? string.Empty;
+            ResultTorrentDownloadFolderTemplate = TxtTorrentTemplate.Text?.Trim() ?? string.Empty;
             DialogResult   = true;
         }
 
-        private void BtnCancel_Click(object sender, RoutedEventArgs e)
-        {
+        private void BtnCancel_Click(object sender, RoutedEventArgs e) =>
             DialogResult = false;
-        }
     }
 }

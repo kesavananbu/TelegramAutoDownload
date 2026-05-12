@@ -23,12 +23,12 @@ namespace TelegramAutoDownload.Tests
         // ---------------------------------------------------------------------------
 
         [Theory]
-        [InlineData("best",  "bestvideo[ext=mp4]+bestaudio")]
+        [InlineData("VIDEO", "bestvideo[ext=mp4]+bestaudio")]
         [InlineData("4K",    "height<=2160")]
         [InlineData("1080p", "height<=1080")]
         [InlineData("720p",  "height<=720")]
         [InlineData("480p",  "height<=480")]
-        [InlineData("audio", "bestaudio")]
+        [InlineData("AUDIO", "bestaudio")]
         public void Quality_FormatString_ContainsExpectedSubstring(string quality, string expectedSubstring)
         {
             var format = YtdlpFormatHelper.GetFormatString(quality);
@@ -36,33 +36,53 @@ namespace TelegramAutoDownload.Tests
                 because: $"quality '{quality}' must produce a yt-dlp format selector with '{expectedSubstring}'");
         }
 
+        [Theory]
+        [InlineData("best",  "bestvideo[ext=mp4]+bestaudio")]
+        [InlineData("audio", "bestaudio")]
+        public void Quality_BackwardCompat_OldLabelsStillWork(string oldLabel, string expectedSubstring)
+        {
+            // Old config files may still have "best" or "audio" — they must keep working.
+            var format = YtdlpFormatHelper.GetFormatString(oldLabel);
+            format.Should().Contain(expectedSubstring,
+                because: $"old label '{oldLabel}' must remain functional for backward compatibility");
+        }
+
         [Fact]
         public void Quality_UnknownLabel_FallsBackToBest()
         {
             var format = YtdlpFormatHelper.GetFormatString("nonexistent");
             format.Should().Contain("bestvideo[ext=mp4]+bestaudio",
-                because: "unknown quality labels must fall back to the 'best' format");
+                because: "unknown quality labels must fall back to the best video format");
         }
 
         [Fact]
         public void Quality_AudioOnly_IsDetectedCorrectly()
         {
-            YtdlpFormatHelper.IsAudioOnly("audio").Should().BeTrue();
-            YtdlpFormatHelper.IsAudioOnly("best").Should().BeFalse();
+            YtdlpFormatHelper.IsAudioOnly("AUDIO").Should().BeTrue();
+            YtdlpFormatHelper.IsAudioOnly("audio").Should().BeTrue("old 'audio' label must still be detected as audio-only");
+            YtdlpFormatHelper.IsAudioOnly("VIDEO").Should().BeFalse();
             YtdlpFormatHelper.IsAudioOnly("1080p").Should().BeFalse();
             YtdlpFormatHelper.IsAudioOnly(null).Should().BeFalse();
+        }
+
+        [Fact]
+        public void Quality_HighestVideoConstant_UsesBestFormatSelector()
+        {
+            YtdlpFormatHelper.HighestVideoQuality.Should().Be("VIDEO");
+            YtdlpFormatHelper.GetFormatString(YtdlpFormatHelper.HighestVideoQuality)
+                .Should().Contain("bestvideo[ext=mp4]+bestaudio");
         }
 
         [Fact]
         public void Quality_Options_ContainsAllExpectedLabels()
         {
             var options = YtdlpFormatHelper.QualityOptions;
-            options.Should().Contain("best");
+            options.Should().Contain("VIDEO");
             options.Should().Contain("4K");
             options.Should().Contain("1080p");
             options.Should().Contain("720p");
             options.Should().Contain("480p");
-            options.Should().Contain("audio");
+            options.Should().Contain("AUDIO");
         }
 
         // ---------------------------------------------------------------------------
@@ -242,10 +262,10 @@ namespace TelegramAutoDownload.Tests
         // ---------------------------------------------------------------------------
 
         [Theory]
-        [InlineData("best")]
+        [InlineData("VIDEO")]
         [InlineData("1080p")]
         [InlineData("720p")]
-        [InlineData("audio")]
+        [InlineData("AUDIO")]
         public void Config_YtdlpQuality_SetsAndPreservesValue(string quality)
         {
             var config = new PluginConfig
@@ -262,10 +282,10 @@ namespace TelegramAutoDownload.Tests
         }
 
         [Fact]
-        public void Config_DefaultQuality_IsBest()
+        public void Config_DefaultQuality_IsVideo()
         {
             var config = new PluginConfig { ChatName = "test", Text = "url", PathSaveFile = "." };
-            config.YtdlpQuality.Should().Be("best");
+            config.YtdlpQuality.Should().Be(YtdlpFormatHelper.HighestVideoQuality);
         }
 
         // ---------------------------------------------------------------------------

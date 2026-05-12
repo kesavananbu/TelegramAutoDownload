@@ -40,8 +40,13 @@ namespace YoutubePlugin
                 };
             }
 
-            // Output layout: PathSaveFile/YouTube/ChatName/%(channel)s/%(title)s.%(ext)s
-            var baseFolder = Path.Combine(config.PathSaveFile, PluginName, config.ChatName);
+            // Output layout: configurable under download root; default matches previous {YouTube}/{Chat}/%(channel)s
+            var baseFolder = PluginFolderPathHelper.CombineUnderDownloadRoot(
+                config.PathSaveFile,
+                config.YoutubeDownloadFolderTemplate,
+                PluginName,
+                config.ChatName,
+                "{Platform}/{ChatName}");
             if (!Directory.Exists(baseFolder))
                 Directory.CreateDirectory(baseFolder);
 

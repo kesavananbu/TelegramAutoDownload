@@ -66,6 +66,15 @@ namespace TelegramAutoDownload.Tests
             _svc.GetTypeOfMessage(msg).Should().Be(MessageTypes.Videos);
         }
 
+        [Fact]
+        public void DocumentMkvOctetStream_RoutesToVideos()
+        {
+            var doc = MakeDoc("application/octet-stream",
+                new DocumentAttributeFilename { file_name = "לולו_סרטים.mkv" });
+            var msg = MediaDocMsg(doc);
+            _svc.GetTypeOfMessage(msg).Should().Be(MessageTypes.Videos);
+        }
+
         // ---------------------------------------------------------------------------
         // Stickers — must NOT be routed to Photos or Videos (go to Message → no plugin)
         // ---------------------------------------------------------------------------

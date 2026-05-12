@@ -7,6 +7,7 @@
        xmlns:conv="clr-namespace:TelegramAutoDownload.Converters"
        mc:Ignorable="d"
        Title="Telegram Auto Download"
+       AutomationProperties.AutomationId="TelegramMainWindow"
        Height="800" Width="1440"
        MinWidth="640" MinHeight="400"
        WindowStartupLocation="CenterScreen">
@@ -128,7 +129,14 @@
         <Border Grid.Row="0" Background="#F5F5F5" BorderBrush="#E0E0E0" BorderThickness="0,0,0,1" Padding="12,6">
             <StackPanel>
                 <DockPanel Margin="0,0,0,4">
-                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBox x:Name="SearchTextBox" DockPanel.Dock="Left" Width="280"
+                             mah:TextBoxHelper.Watermark="Search chats..."
+                             mah:TextBoxHelper.ClearTextButton="True"
+                             TextChanged="SearchTextBox_TextChanged"
+                             VerticalContentAlignment="Center" Height="32"
+                             Margin="0,0,12,0"/>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
+                                VerticalAlignment="Center" HorizontalAlignment="Right">
                         <Button x:Name="BtnRefreshChats" Content="🔄 Refresh" Height="28"
                                 Click="BtnRefreshChats_Click" Margin="0,0,8,0"
                                 ToolTip="Reload chat list from Telegram"/>
@@ -139,11 +147,6 @@
                             <TextBlock x:Name="tbCountChats" Text="0" Foreground="White" FontWeight="Bold"/>
                         </Border>
                     </StackPanel>
-                    <TextBox x:Name="SearchTextBox" Width="280"
-                             mah:TextBoxHelper.Watermark="Search chats..."
-                             mah:TextBoxHelper.ClearTextButton="True"
-                             TextChanged="SearchTextBox_TextChanged"
-                             VerticalContentAlignment="Center" Height="32"/>
                 </DockPanel>
                 <!-- Session statistics strip -->
                 <Border Background="#E3F2FD" CornerRadius="4" Padding="10,3">
@@ -188,6 +191,7 @@
                     </Style>
                     <!-- Alternating row colors -->
                     <Style TargetType="ListViewItem">
+                        <EventSetter Event="MouseDoubleClick" Handler="ChatList_Item_MouseDoubleClick"/>
                         <Style.Triggers>
                             <Trigger Property="ItemsControl.AlternationIndex" Value="0">
                                 <Setter Property="Background" Value="White"/>
@@ -335,18 +339,6 @@
                             </GridViewColumn.CellTemplate>
                         </GridViewColumn>
 
-                        <!-- Quality: per-chat yt-dlp quality for URL-based plugins -->
-                        <GridViewColumn Header="Quality" Width="100">
-                            <GridViewColumn.CellTemplate>
-                                <DataTemplate>
-                                    <ComboBox Width="82"
-                                              Loaded="QualityComboBox_Loaded"
-                                              SelectionChanged="QualityComboBox_SelectionChanged"
-                                              ToolTip="yt-dlp download quality for YouTube / Social media links"/>
-                                </DataTemplate>
-                            </GridViewColumn.CellTemplate>
-                        </GridViewColumn>
-
                         <!-- Filter: amber when patterns set, opens full FilterDialog -->
                         <GridViewColumn Header="Filter" Width="52">
                             <GridViewColumn.CellTemplate>
@@ -391,6 +383,7 @@
                                 <DataTemplate>
                                     <Button Content="⬇ Sync" Height="24" Padding="4,0" FontSize="11"
                                             Margin="8,0,0,0"
+                                            AutomationProperties.AutomationId="ChatHistorySyncButton"
                                             ToolTip="Download all existing files from this chat's history"
                                             Tag="{Binding}"
                                             Click="BtnSyncChat_Click"/>

@@ -48,7 +48,7 @@ namespace TelegramAutoDownload.UITests
             App = Application.Launch(AppExePath());
 
             // Give the application time to initialise its main window
-            MainWindow = App.GetMainWindow(Automation, TimeSpan.FromSeconds(10));
+            MainWindow = App.GetMainWindow(Automation, TimeSpan.FromSeconds(15));
         }
 
         public void Dispose()

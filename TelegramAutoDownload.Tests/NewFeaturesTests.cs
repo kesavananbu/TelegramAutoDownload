@@ -351,6 +351,16 @@ namespace TelegramAutoDownload.Tests
             var chat = new ChatDto { Name = "x", Username = "", Type = "", FolderTemplate = "{ChatName}/{Year}" };
             chat.FolderTemplate.Should().Be("{ChatName}/{Year}");
         }
+
+        [Fact]
+        public void ChatDto_ProviderFolderTemplates_DefaultEmpty()
+        {
+            var chat = new ChatDto { Name = "c", Username = "", Type = "" };
+            chat.SocialDownloadFolderTemplate.Should().BeEmpty();
+            chat.YoutubeDownloadFolderTemplate.Should().BeEmpty();
+            chat.OtherDownloadFolderTemplate.Should().BeEmpty();
+            chat.TorrentDownloadFolderTemplate.Should().BeEmpty();
+        }
     }
 
     // ===========================================================================

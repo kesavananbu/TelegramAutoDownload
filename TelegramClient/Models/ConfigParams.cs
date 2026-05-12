@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using BasePlugins;
 using TelegramClient.Models;
 
 namespace TelegramAutoDownload.Models
@@ -15,7 +16,6 @@ namespace TelegramAutoDownload.Models
         public string ChatId { get; set; } = Environment.GetEnvironmentVariable("CHAT_ID") ?? string.Empty;
 
         public int DownloadThreads { get; set; } = 3;
-        public bool DarkMode { get; set; } = false;
 
         // Notification preferences — which events should trigger a Telegram bot message
         public bool NotifyOnStartup { get; set; } = true;
@@ -24,5 +24,15 @@ namespace TelegramAutoDownload.Models
         public bool NotifyOnError { get; set; } = true;
         public List<ChatDto> Chats { get; set; } = [];
         public string PathSaveFile { get; set; }
+
+        /// <summary>
+        /// Per-chat yt-dlp quality UI was removed; every chat always uses best video+audio.
+        /// Call after deserializing config or importing settings so legacy JSON values are overwritten.
+        /// </summary>
+        public void NormalizeYtDlpQualityForAllChats()
+        {
+            foreach (var chat in Chats)
+                chat.YtdlpQuality = YtdlpFormatHelper.HighestVideoQuality;
+        }
     }
 }

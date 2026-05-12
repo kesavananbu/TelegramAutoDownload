@@ -1,4 +1,3 @@
-using ControlzEx.Theming;
 using MahApps.Metro.Controls;
 using Newtonsoft.Json;
 using System;
@@ -46,7 +45,6 @@ namespace TelegramAutoDownload
             txtDownloadPath.Text = _config.PathSaveFile ?? string.Empty;
             sliderThreads.Value = Math.Max(1, Math.Min(10, _config.DownloadThreads));
             tbThreadsValue.Text = ((int)sliderThreads.Value).ToString();
-            toggleDarkMode.IsChecked = _config.DarkMode;
 
             // Notification preferences
             chkNotifyStartup.IsChecked  = _config.NotifyOnStartup;
@@ -59,12 +57,6 @@ namespace TelegramAutoDownload
         private void ToggleNotifications_Changed(object sender, RoutedEventArgs e)
         {
             // Toggle only controls whether notifications are active — fields stay always editable
-        }
-
-        private void ToggleDarkMode_Changed(object sender, RoutedEventArgs e)
-        {
-            bool dark = toggleDarkMode.IsChecked == true;
-            ThemeManager.Current.ChangeTheme(Application.Current, dark ? "Dark.Blue" : "Light.Blue");
         }
 
         private void SliderThreads_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -124,7 +116,6 @@ namespace TelegramAutoDownload
             _config.ChatId = txtChatId.Text.Trim();
             _config.PathSaveFile = txtDownloadPath.Text.Trim();
             _config.DownloadThreads = (int)sliderThreads.Value;
-            _config.DarkMode = toggleDarkMode.IsChecked == true;
 
             // Notification preferences
             _config.NotifyOnStartup  = chkNotifyStartup.IsChecked  == true;
@@ -170,7 +161,6 @@ namespace TelegramAutoDownload
                 ChatId = _config.ChatId,
                 PathSaveFile = _config.PathSaveFile,
                 DownloadThreads = _config.DownloadThreads,
-                DarkMode = _config.DarkMode,
                 NotifyOnStartup = _config.NotifyOnStartup,
                 NotifyOnProgress = _config.NotifyOnProgress,
                 NotifyOnComplete = _config.NotifyOnComplete,
@@ -202,12 +192,12 @@ namespace TelegramAutoDownload
                 if (!string.IsNullOrWhiteSpace(imported.ChatId)) _config.ChatId = imported.ChatId;
                 if (!string.IsNullOrWhiteSpace(imported.PathSaveFile)) _config.PathSaveFile = imported.PathSaveFile;
                 if (imported.DownloadThreads > 0) _config.DownloadThreads = imported.DownloadThreads;
-                _config.DarkMode = imported.DarkMode;
                 _config.NotifyOnStartup = imported.NotifyOnStartup;
                 _config.NotifyOnProgress = imported.NotifyOnProgress;
                 _config.NotifyOnComplete = imported.NotifyOnComplete;
                 _config.NotifyOnError = imported.NotifyOnError;
                 if (imported.Chats?.Count > 0) _config.Chats = imported.Chats;
+                _config.NormalizeYtDlpQualityForAllChats();
 
                 LoadValues();
                 MessageBox.Show("Settings imported successfully.", "Import", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -216,6 +206,12 @@ namespace TelegramAutoDownload
             {
                 MessageBox.Show($"Import failed: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        private void BtnViewLogs_Click(object sender, RoutedEventArgs e)
+        {
+            var w = new LogViewerWindow { Owner = this };
+            w.Show();
         }
 
         private async void BtnTestBot_Click(object sender, RoutedEventArgs e)

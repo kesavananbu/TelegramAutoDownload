@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.ComponentModel;
+using BasePlugins;
 
 namespace TelegramClient.Models
 {
@@ -51,8 +52,8 @@ namespace TelegramClient.Models
         public List<string> IgnoreFileByRegex { get; set; } = [];
         // Keys are PluginName values; missing key = disabled (user must explicitly enable per chat)
         public Dictionary<string, bool> EnabledPlugins { get; set; } = new();
-        // yt-dlp quality label for URL-based plugins (YouTube, SocialMedia). Defaults to "best".
-        public string YtdlpQuality { get; set; } = "best";
+        // yt-dlp quality for URL-based plugins — fixed to best video+audio (YtdlpFormatHelper.HighestVideoQuality).
+        public string YtdlpQuality { get; set; } = YtdlpFormatHelper.HighestVideoQuality;
 
         /// <summary>
         /// Custom folder template for this chat. Empty = use default layout ({Type}/{ChatName}/).
@@ -60,6 +61,18 @@ namespace TelegramClient.Models
         /// Example: "{ChatName}/{Year}-{Month}" → "MyChannel/2026-05/"
         /// </summary>
         public string FolderTemplate { get; set; } = string.Empty;
+
+        /// <summary>Relative path under the download folder for SocialMedia (yt-dlp). Tokens: {Platform}, {ChatName}. Empty = default.</summary>
+        public string SocialDownloadFolderTemplate { get; set; } = string.Empty;
+
+        /// <summary>Relative path for the YouTube plugin (yt-dlp). Tokens: {Platform}, {ChatName}. Empty = default.</summary>
+        public string YoutubeDownloadFolderTemplate { get; set; } = string.Empty;
+
+        /// <summary>Relative path for the Other (direct HTTP) plugin. Tokens: {Platform}, {ChatName}. Empty = default.</summary>
+        public string OtherDownloadFolderTemplate { get; set; } = string.Empty;
+
+        /// <summary>Relative path for the Torrent plugin. Tokens: {Platform}, {ChatName}. Empty = default.</summary>
+        public string TorrentDownloadFolderTemplate { get; set; } = string.Empty;
 
         /// <summary>
         /// When true, every incoming message is appended to a JSONL history file and

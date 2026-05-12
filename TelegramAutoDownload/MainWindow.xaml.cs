@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Media;
@@ -197,8 +198,12 @@ namespace TelegramAutoDownload
                     DownloadFromSize = c.DownloadFromSize,
                     IgnoreFileByRegex = c.IgnoreFileByRegex,
                     EnabledPlugins  = c.EnabledPlugins ?? new Dictionary<string, bool>(),
-                    YtdlpQuality    = string.IsNullOrEmpty(c.YtdlpQuality) ? "best" : c.YtdlpQuality,
+                    YtdlpQuality    = BasePlugins.YtdlpFormatHelper.HighestVideoQuality,
                     FolderTemplate  = c.FolderTemplate ?? string.Empty,
+                    SocialDownloadFolderTemplate = c.SocialDownloadFolderTemplate ?? string.Empty,
+                    YoutubeDownloadFolderTemplate = c.YoutubeDownloadFolderTemplate ?? string.Empty,
+                    OtherDownloadFolderTemplate = c.OtherDownloadFolderTemplate ?? string.Empty,
+                    TorrentDownloadFolderTemplate = c.TorrentDownloadFolderTemplate ?? string.Empty,
                     SaveHistory     = c.SaveHistory,
                     HistoryIcon     = c.HistoryIcon ?? string.Empty,
                     MembersCount    = c.MembersCount,
@@ -250,8 +255,12 @@ namespace TelegramAutoDownload
                         chat.DownloadFromSize   = saved.DownloadFromSize;
                         chat.IgnoreFileByRegex  = saved.IgnoreFileByRegex;
                         chat.EnabledPlugins     = saved.EnabledPlugins ?? new Dictionary<string, bool>();
-                        chat.YtdlpQuality       = string.IsNullOrEmpty(saved.YtdlpQuality) ? "best" : saved.YtdlpQuality;
+                        chat.YtdlpQuality       = BasePlugins.YtdlpFormatHelper.HighestVideoQuality;
                         chat.FolderTemplate     = saved.FolderTemplate ?? string.Empty;
+                        chat.SocialDownloadFolderTemplate = saved.SocialDownloadFolderTemplate ?? string.Empty;
+                        chat.YoutubeDownloadFolderTemplate = saved.YoutubeDownloadFolderTemplate ?? string.Empty;
+                        chat.OtherDownloadFolderTemplate = saved.OtherDownloadFolderTemplate ?? string.Empty;
+                        chat.TorrentDownloadFolderTemplate = saved.TorrentDownloadFolderTemplate ?? string.Empty;
                         chat.SaveHistory        = saved.SaveHistory;
                         chat.HistoryIcon        = saved.HistoryIcon ?? string.Empty;
                         chat.Muted              = saved.Muted;
@@ -525,6 +534,18 @@ namespace TelegramAutoDownload
         }
 
         /// <summary>
+        /// Double-click a chat row to open history browse (messages + selective download).
+        /// Wired on <see cref="ListViewItem"/> so it works reliably with <see cref="GridView"/> cells
+        /// (ContainerFromElement on the list often fails for inner visuals).
+        /// </summary>
+        private void ChatList_Item_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is not ListViewItem row || row.DataContext is not ChatDto chat) return;
+            e.Handled = true;
+            new ChatBrowseWindow(TelegramApp, chat) { Owner = this }.Show();
+        }
+
+        /// <summary>
         /// Applies a SortDescription to the chat list view and updates the column header arrow indicator.
         /// Selected chats are always kept first as a primary sort; the user-chosen column is secondary.
         /// </summary>
@@ -585,8 +606,12 @@ namespace TelegramAutoDownload
                         chat.DownloadFromSize   = existingChat.DownloadFromSize;
                         chat.IgnoreFileByRegex  = existingChat.IgnoreFileByRegex ?? chat.IgnoreFileByRegex;
                         chat.EnabledPlugins     = existingChat.EnabledPlugins ?? chat.EnabledPlugins;
-                        chat.YtdlpQuality       = string.IsNullOrEmpty(existingChat.YtdlpQuality) ? "best" : existingChat.YtdlpQuality;
+                        chat.YtdlpQuality       = BasePlugins.YtdlpFormatHelper.HighestVideoQuality;
                         chat.FolderTemplate     = existingChat.FolderTemplate ?? string.Empty;
+                        chat.SocialDownloadFolderTemplate = existingChat.SocialDownloadFolderTemplate ?? string.Empty;
+                        chat.YoutubeDownloadFolderTemplate = existingChat.YoutubeDownloadFolderTemplate ?? string.Empty;
+                        chat.OtherDownloadFolderTemplate = existingChat.OtherDownloadFolderTemplate ?? string.Empty;
+                        chat.TorrentDownloadFolderTemplate = existingChat.TorrentDownloadFolderTemplate ?? string.Empty;
                         chat.SaveHistory        = existingChat.SaveHistory;
                         chat.HistoryIcon        = existingChat.HistoryIcon ?? string.Empty;
                     }
@@ -948,37 +973,6 @@ namespace TelegramAutoDownload
             }
         }
 
-        private void QualityComboBox_Loaded(object sender, RoutedEventArgs e)
-        {
-            if (sender is not ComboBox comboBox) return;
-            var chatDto = comboBox.DataContext as ChatDto;
-            if (chatDto == null) return;
-
-            _isLoading = true;
-            comboBox.ItemsSource = BasePlugins.YtdlpFormatHelper.QualityOptions;
-            var saved = chatDto.YtdlpQuality;
-            comboBox.SelectedItem = BasePlugins.YtdlpFormatHelper.QualityOptions.Contains(saved) ? saved : "best";
-            _isLoading = false;
-        }
-
-        private void QualityComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (_isLoading) return;
-            if (sender is not ComboBox comboBox || comboBox.SelectedItem is not string quality) return;
-
-            var chatDto = comboBox.DataContext as ChatDto;
-            if (chatDto == null) return;
-
-            var config = ConfigFile.Read();
-            var foundChat = config.Chats.FirstOrDefault(a => a.Id == chatDto.Id);
-            if (foundChat == null) return;
-
-            chatDto.YtdlpQuality = quality;
-            foundChat.YtdlpQuality = quality;
-            ConfigFile.Save(config);
-            TelegramApp.UpdateConfig(config);
-        }
-
         // ── Filter (IgnoreFileByRegex) ────────────────────────────────────────────────
 
         /// <summary>Opens the rich Filter Editor dialog for the chat on the clicked row.</summary>
@@ -1046,24 +1040,24 @@ namespace TelegramAutoDownload
             var config   = ConfigFile.Read();
             var basePath = config.PathSaveFile ?? string.Empty;
 
-            var dlg = new FolderTemplateDialog(
-                currentTemplate: chat.FolderTemplate,
-                chatName:        chat.Name,
-                chatType:        chat.Type ?? "Other",
-                basePath:        basePath)
-            {
-                Owner = this
-            };
+            var dlg = new FolderTemplateDialog(chat, basePath) { Owner = this };
 
             if (dlg.ShowDialog() != true) return;
 
-            // Persist the new template
             chat.FolderTemplate = dlg.ResultTemplate;
+            chat.SocialDownloadFolderTemplate = dlg.ResultSocialDownloadFolderTemplate;
+            chat.YoutubeDownloadFolderTemplate = dlg.ResultYoutubeDownloadFolderTemplate;
+            chat.OtherDownloadFolderTemplate = dlg.ResultOtherDownloadFolderTemplate;
+            chat.TorrentDownloadFolderTemplate = dlg.ResultTorrentDownloadFolderTemplate;
 
             var found = config.Chats.FirstOrDefault(c => c.Id == chat.Id);
             if (found != null)
             {
                 found.FolderTemplate = dlg.ResultTemplate;
+                found.SocialDownloadFolderTemplate = dlg.ResultSocialDownloadFolderTemplate;
+                found.YoutubeDownloadFolderTemplate = dlg.ResultYoutubeDownloadFolderTemplate;
+                found.OtherDownloadFolderTemplate = dlg.ResultOtherDownloadFolderTemplate;
+                found.TorrentDownloadFolderTemplate = dlg.ResultTorrentDownloadFolderTemplate;
                 ConfigFile.Save(config);
                 TelegramApp.UpdateConfig(config);
             }

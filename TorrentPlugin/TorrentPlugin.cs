@@ -21,7 +21,12 @@ namespace TorrentPlugin
 
         public override async Task<ResultExecute> ExecuteAsync(Config config)
         {
-            var outputFolder = Path.Combine(config.PathSaveFile, "Torrent", config.ChatName);
+            var outputFolder = PluginFolderPathHelper.CombineUnderDownloadRoot(
+                config.PathSaveFile,
+                config.TorrentDownloadFolderTemplate,
+                PluginName,
+                config.ChatName,
+                "{Platform}/{ChatName}");
             if (!Directory.Exists(outputFolder))
                 Directory.CreateDirectory(outputFolder);
 

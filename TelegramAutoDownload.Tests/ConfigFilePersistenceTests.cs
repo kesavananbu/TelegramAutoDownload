@@ -99,15 +99,15 @@ namespace TelegramAutoDownload.Tests
         }
 
         [Fact]
-        public void SaveAndRead_DarkMode_IsPreserved()
+        public void SaveAndRead_NotifyOnStartup_IsPreserved()
         {
-            var path = TempPath("round_trip_dark.txt");
+            var path = TempPath("round_trip_notify.txt");
             var cfg = new ConfigFile(path);
-            var original = new ConfigParams { DarkMode = true };
+            var original = new ConfigParams { NotifyOnStartup = false };
 
             cfg.Save(original);
 
-            cfg.Read().DarkMode.Should().BeTrue();
+            cfg.Read().NotifyOnStartup.Should().BeFalse();
         }
 
         [Fact]
@@ -133,7 +133,7 @@ namespace TelegramAutoDownload.Tests
         }
 
         [Fact]
-        public void SaveAndRead_YtdlpQuality_IsPreserved()
+        public void SaveAndRead_YtdlpQuality_IsAlwaysHighestAfterRead()
         {
             var path = TempPath("round_trip_quality.txt");
             var cfg = new ConfigFile(path);
@@ -142,7 +142,8 @@ namespace TelegramAutoDownload.Tests
 
             cfg.Save(original);
 
-            cfg.Read().Chats[0].YtdlpQuality.Should().Be("1080p");
+            // Legacy JSON may still store old per-chat values; Read() normalizes to fixed best video+audio.
+            cfg.Read().Chats[0].YtdlpQuality.Should().Be(BasePlugins.YtdlpFormatHelper.HighestVideoQuality);
         }
 
         [Fact]

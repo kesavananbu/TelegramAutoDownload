@@ -36,7 +36,12 @@ namespace DownloadPlugin
             try
             {
                 long chunkSize = 20 * 1024 * 1024;
-                var path = $"{config.PathSaveFile}/{PluginName}/{config.ChatName}";
+                var path = PluginFolderPathHelper.CombineUnderDownloadRoot(
+                    config.PathSaveFile,
+                    config.OtherDownloadFolderTemplate,
+                    PluginName,
+                    config.ChatName,
+                    "{Platform}/{ChatName}");
                 CreateDirectoryIfNotExist(path);
 
                 var client = _http;

@@ -16,9 +16,10 @@ namespace TelegramClient.Factory.Service
     public class MessageTextFactoryService : BaseMessage
     {
         private readonly List<Type> _pluginTypes = [];
-        public override MessageTypes TypeMessage { get; }
+        public override MessageTypes TypeMessage => MessageTypes.Message;
 
-        public MessageTextFactoryService(Client client, string pathFolderToSaveFiles) : base(client, pathFolderToSaveFiles)
+        public MessageTextFactoryService(Client client, string pathFolderToSaveFiles)
+            : base(client, pathFolderToSaveFiles)
         {
             // Use the absolute path next to the executable so the app works both
             // as a portable install (writable folder) and as a Program Files install
@@ -35,18 +36,52 @@ namespace TelegramClient.Factory.Service
                 ? Directory.GetDirectories(pluginsDir)
                 : Array.Empty<string>();
 
-            foreach (var folder in folders)
+            // Same plugin DLL may exist under multiple subfolders (e.g. duplicate installs).
+            // LoadFrom the same assembly simple name twice throws "Assembly with same name is already loaded".
+            var loadedAssemblySimpleNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var folder in folders.OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
             {
                 var pluginFiles = Directory.GetFiles(folder, "*.dll");
 
-                foreach (var pluginFile in pluginFiles)
+                foreach (var pluginFile in pluginFiles.OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
                 {
-                    Assembly pluginAssembly = Assembly.LoadFrom(pluginFile);
+                    string simpleName;
+                    try
+                    {
+                        simpleName = AssemblyName.GetAssemblyName(pluginFile).Name ?? string.Empty;
+                    }
+                    catch
+                    {
+                        continue;
+                    }
 
-                    _pluginTypes.AddRange(pluginAssembly.GetTypes()
-                    .Where(t => !t.IsAbstract && t.IsClass &&
-                                t.BaseType != null && t.BaseType.IsGenericType &&
-                                t.BaseType.GetGenericTypeDefinition() == typeof(BasePlugin<>)));
+                    if (string.IsNullOrEmpty(simpleName) || !loadedAssemblySimpleNames.Add(simpleName))
+                        continue;
+
+                    try
+                    {
+                        Assembly pluginAssembly = Assembly.LoadFrom(pluginFile);
+                        try
+                        {
+                            _pluginTypes.AddRange(pluginAssembly.GetTypes()
+                                .Where(t => !t.IsAbstract && t.IsClass &&
+                                            t.BaseType != null && t.BaseType.IsGenericType &&
+                                            t.BaseType.GetGenericTypeDefinition() == typeof(BasePlugin<>)));
+                        }
+                        catch (ReflectionTypeLoadException)
+                        {
+                            // Assembly is loaded; do not remove simpleName — a second LoadFrom would fail.
+                        }
+                    }
+                    catch (FileLoadException)
+                    {
+                        loadedAssemblySimpleNames.Remove(simpleName);
+                    }
+                    catch (BadImageFormatException)
+                    {
+                        loadedAssemblySimpleNames.Remove(simpleName);
+                    }
                 }
             }
         }
@@ -74,6 +109,18 @@ namespace TelegramClient.Factory.Service
                         ChatName = chatDto.Name,
                         EnabledPlugins = chatDto.EnabledPlugins,
                         YtdlpQuality = chatDto.YtdlpQuality,
+                        SocialDownloadFolderTemplate = string.IsNullOrWhiteSpace(chatDto.SocialDownloadFolderTemplate)
+                            ? null
+                            : chatDto.SocialDownloadFolderTemplate,
+                        YoutubeDownloadFolderTemplate = string.IsNullOrWhiteSpace(chatDto.YoutubeDownloadFolderTemplate)
+                            ? null
+                            : chatDto.YoutubeDownloadFolderTemplate,
+                        OtherDownloadFolderTemplate = string.IsNullOrWhiteSpace(chatDto.OtherDownloadFolderTemplate)
+                            ? null
+                            : chatDto.OtherDownloadFolderTemplate,
+                        TorrentDownloadFolderTemplate = string.IsNullOrWhiteSpace(chatDto.TorrentDownloadFolderTemplate)
+                            ? null
+                            : chatDto.TorrentDownloadFolderTemplate,
                     };
 
                     if (!pluginInstance!.CanHandle(config)) continue;

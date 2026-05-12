@@ -77,8 +77,13 @@ namespace SocialMediaPlugin
             }
 
             // Use friendly platform name as subfolder (e.g. YouTube, Facebook, TikTok)
-            var platformName = GetPlatformName(config.Text);
-            var outputFolder = Path.Combine(config.PathSaveFile, platformName, config.ChatName);
+            var platformName = PlatformNameHelper.GetPlatformName(config.Text);
+            var outputFolder = PluginFolderPathHelper.CombineUnderDownloadRoot(
+                config.PathSaveFile,
+                config.SocialDownloadFolderTemplate,
+                platformName,
+                config.ChatName,
+                "{Platform}/{ChatName}");
             if (!Directory.Exists(outputFolder))
                 Directory.CreateDirectory(outputFolder);
 
@@ -213,7 +218,7 @@ namespace SocialMediaPlugin
         /// </summary>
         private static string MapKnownError(string url, string rawError)
         {
-            var platform = GetPlatformName(url);
+            var platform = PlatformNameHelper.GetPlatformName(url);
             var hint = string.Empty;
 
             if (rawError.Contains("empty media response") || rawError.Contains("not granting access") ||
@@ -230,42 +235,6 @@ namespace SocialMediaPlugin
             }
 
             return string.IsNullOrEmpty(hint) ? rawError : $"{hint}\n\nDetail: {rawError}";
-        }
-
-        /// <summary>
-        /// Returns a friendly platform name from the URL (e.g. "YouTube", "Facebook").
-        /// Used as the subfolder name so downloads are organised by source.
-        /// </summary>
-        private static string GetPlatformName(string url)
-        {
-            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
-                return "SocialMedia";
-
-            var host = uri.Host.ToLowerInvariant();
-            if (host.StartsWith("www.")) host = host[4..];
-
-            return host switch
-            {
-                "youtube.com" or "youtu.be"               => "YouTube",
-                "facebook.com" or "fb.watch" or "fb.com"  => "Facebook",
-                "instagram.com"                            => "Instagram",
-                "tiktok.com" or "vm.tiktok.com"
-                    or "vt.tiktok.com"                     => "TikTok",
-                "x.com" or "twitter.com" or "t.co"        => "X",
-                "reddit.com" or "v.redd.it"               => "Reddit",
-                "twitch.tv" or "clips.twitch.tv"           => "Twitch",
-                "vimeo.com"                                => "Vimeo",
-                "dailymotion.com"                          => "Dailymotion",
-                "linkedin.com"                             => "LinkedIn",
-                "pinterest.com"                            => "Pinterest",
-                "snapchat.com"                             => "Snapchat",
-                "threads.net"                              => "Threads",
-                "rumble.com"                               => "Rumble",
-                "odysee.com"                               => "Odysee",
-                "bitchute.com"                             => "Bitchute",
-                "streamable.com"                           => "Streamable",
-                _                                          => "SocialMedia"
-            };
         }
     }
 }

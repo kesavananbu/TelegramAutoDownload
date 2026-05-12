@@ -126,23 +126,8 @@ namespace TelegramClient.Factory.Service
             }
             else if (message.media is MessageMediaDocument document)
             {
-                var mime_type = ((Document)document.document).mime_type;
-                if (mime_type?.Contains("image") == true)
-                {
-                    return MessageTypes.Photos;
-                }
-                else if (mime_type?.Contains("video") == true)
-                {
-                    return MessageTypes.Videos;
-                }
-                else if (mime_type?.Contains("audio") == true)
-                {
-                    return MessageTypes.Music;
-                }
-                else
-                {
-                    return MessageTypes.Files;
-                }
+                var doc = (Document)document.document;
+                return DocumentMediaKindHelper.GetMessageType(doc);
             }
             else
             {

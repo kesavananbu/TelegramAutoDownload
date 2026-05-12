@@ -7,15 +7,23 @@ namespace BasePlugins
     /// </summary>
     public static class YtdlpFormatHelper
     {
-        /// <summary>Quality labels shown in the UI quality drop-down.</summary>
+        /// <summary>
+        /// Fixed app behaviour: best available video+audio (no resolution cap in the primary selector).
+        /// Legacy config files may still list other labels; they are normalized on load to this value.
+        /// </summary>
+        public const string HighestVideoQuality = "VIDEO";
+
+        /// <summary>Legacy per-chat labels still understood by <see cref="GetFormatString"/>.</summary>
         public static readonly string[] QualityOptions =
         [
-            "best", "4K", "1080p", "720p", "480p", "audio"
+            "VIDEO", "4K", "1080p", "720p", "480p", "AUDIO"
         ];
 
         /// <summary>
         /// Returns the yt-dlp format string for the given quality label.
-        /// Unknown labels fall back to "best".
+        /// "VIDEO" = best available video+audio. "AUDIO" = audio-only.
+        /// Old values "best" and "audio" are accepted for backward compatibility.
+        /// Unknown labels fall back to best video.
         /// </summary>
         public static string GetFormatString(string? quality) => quality switch
         {
@@ -23,11 +31,11 @@ namespace BasePlugins
             "1080p" => "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]",
             "720p"  => "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]",
             "480p"  => "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=480]+bestaudio/best[height<=480]",
-            "audio" => "bestaudio[ext=m4a]/bestaudio",
-            _       => "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best"
+            "AUDIO" or "audio" => "bestaudio[ext=m4a]/bestaudio",
+            _       => "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best"  // "VIDEO", "best", or any unknown
         };
 
         /// <summary>Returns true when the quality label requests audio-only output.</summary>
-        public static bool IsAudioOnly(string? quality) => quality == "audio";
+        public static bool IsAudioOnly(string? quality) => quality is "AUDIO" or "audio";
     }
 }
