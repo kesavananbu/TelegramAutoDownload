@@ -23,7 +23,7 @@
         <Button Grid.Row="1" Content="Load from file…" HorizontalAlignment="Left" Height="30" Width="140"
                 Margin="0,0,0,8" Click="BtnLoadFile_Click"/>
 
-        <TextBox Grid.Row="2" x:Name="tbJson" AcceptsReturn="True" TextWrapping="No"
+        <TextBox Grid.Row="2" x:Name="tbJson" AcceptsReturn="True" TextWrapping="NoWrap"
                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                  FontFamily="Consolas" FontSize="11"
                  mah:TextBoxHelper.Watermark="Paste JSON here…"/>
