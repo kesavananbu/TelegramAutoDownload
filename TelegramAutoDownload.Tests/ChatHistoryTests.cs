@@ -74,6 +74,14 @@ namespace TelegramAutoDownload.Tests
         }
 
         [Fact]
+        public void GetHistoryFilePath_ChatNameWithTilde_IsSanitized()
+        {
+            var path = ChatHistoryService.GetHistoryFilePath("Channel", "chan ~ test", _baseDir);
+            Path.GetFileName(path).Should().NotContain("~");
+            path.Should().EndWith(".jsonl");
+        }
+
+        [Fact]
         public void GetHistoryFilePath_UnicodeChatName_IsPreserved()
         {
             var path = ChatHistoryService.GetHistoryFilePath("Channel", "עברית קאנל", _baseDir);

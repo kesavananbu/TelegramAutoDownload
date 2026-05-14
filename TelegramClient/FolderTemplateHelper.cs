@@ -65,7 +65,8 @@ namespace TelegramClient
         {
             foreach (char c in Path.GetInvalidFileNameChars())
                 name = name.Replace(c, ' ');
-            return name.TrimEnd();
+            // '~' is valid on Windows but is expanded by some tools (e.g. yt-dlp/Python) as "home"
+            return name.Replace('~', ' ').TrimEnd();
         }
     }
 }

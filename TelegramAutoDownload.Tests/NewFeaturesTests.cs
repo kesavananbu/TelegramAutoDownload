@@ -143,6 +143,14 @@ namespace TelegramAutoDownload.Tests
         }
 
         [Fact]
+        public void Resolve_ChatNameWithTilde_IsSanitized()
+        {
+            var res = FolderTemplateHelper.Resolve("{ChatName}", "Videos", "לולו סרטים ~ סרטים", null)!;
+            res.Should().NotContain("~", because: "tilde is stripped so external tools do not treat it as home");
+            res.Should().Contain("לולו");
+        }
+
+        [Fact]
         public void Resolve_TemplateWithNoTokens_ReturnsTemplateAsIs()
         {
             var res = FolderTemplateHelper.Resolve("static/folder", "Videos", "Chat");

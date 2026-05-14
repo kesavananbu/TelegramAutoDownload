@@ -52,7 +52,8 @@ namespace BasePlugins
         {
             foreach (var ch in Path.GetInvalidFileNameChars())
                 name = name.Replace(ch, '_');
-            return name.Trim();
+            // '~' is valid on Windows but is expanded by some CLI tools as "home"
+            return name.Replace('~', '_').Trim();
         }
     }
 }

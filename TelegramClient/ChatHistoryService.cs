@@ -132,6 +132,7 @@ namespace TelegramClient
         {
             var invalid = isFileName ? Path.GetInvalidFileNameChars() : Path.GetInvalidPathChars();
             foreach (char c in invalid) s = s.Replace(c, '_');
+            s = s.Replace('~', '_');
             return s.Trim('_', ' ');
         }
     }

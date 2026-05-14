@@ -1,7 +1,10 @@
 ﻿using BasePlugins;
+using Serilog;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using TelegramClient.Factory.Base;
 using TelegramClient.Factory.Factories;
@@ -10,7 +13,6 @@ using TelegramClient.Factory.FactoriesMessages.Enum;
 using TelegramClient.Factory.Interfaces.Messages;
 using TelegramClient.Models;
 using TL;
-using TL.Methods;
 using WTelegram;
 
 namespace TelegramClient.Factory.Service
@@ -92,7 +94,9 @@ namespace TelegramClient.Factory.Service
             // Re-fetch the message to get a new reference and retry once.
             if (result.ErrorMessage?.Contains("FILE_REFERENCE_EXPIRED") == true && RefreshMessage != null)
             {
-                System.Diagnostics.Debug.WriteLine($"FILE_REFERENCE_EXPIRED for msg {message.ID} in {chatDto.Name} — refreshing reference and retrying");
+                Log.Information(
+                    "FILE_REFERENCE_EXPIRED — fetching fresh message and retrying once: utc={Utc:o} chat={Chat} msgId={MsgId}",
+                    DateTime.UtcNow, chatDto.Name, message.ID);
                 var freshMessage = await RefreshMessage(chatDto, message.ID);
                 if (freshMessage != null)
                     result = await RunHandlerAsync(freshMessage, chatDto);
@@ -105,17 +109,109 @@ namespace TelegramClient.Factory.Service
         {
             var type = GetTypeOfMessage(message);
             var handleMessage = messageTypes.FirstOrDefault(a => a.TypeMessage.Equals(type));
-            if (handleMessage == null) return new ResultExecute(chatDto.Name);
-
-            var downloadPolicyResult = handleMessage.CheckDownloadPolicy(chatDto, message);
-            if (downloadPolicyResult.IsSuccess)
+            if (handleMessage == null)
             {
-                var resultExecute = await handleMessage.ExecuteAsync(message, chatDto);
-                resultExecute.MessageType = type.ToString();
-                return resultExecute;
+                Log.Debug("No download handler for chat={Chat} msgId={MsgId} inferredType={Type}",
+                    chatDto.Name, message.ID, type);
+                return new ResultExecute(chatDto.Name);
             }
 
-            return downloadPolicyResult;
+            var downloadPolicyResult = handleMessage.CheckDownloadPolicy(chatDto, message);
+            if (!downloadPolicyResult.IsSuccess)
+            {
+                Log.Information(
+                    "Download blocked by policy: utc={Utc:o} chat={Chat} msgId={MsgId} type={Type} reason={Reason}",
+                    DateTime.UtcNow, chatDto.Name, message.ID, type, downloadPolicyResult.ErrorMessage ?? "");
+                return downloadPolicyResult;
+            }
+
+            var logLifecycle = ExpectsDownloadLogLifecycle(message, type, chatDto);
+            if (logLifecycle)
+            {
+                Log.Information(
+                    "Download started: utc={Utc:o} chat={Chat} msgId={MsgId} type={Type}",
+                    DateTime.UtcNow, chatDto.Name, message.ID, type);
+            }
+
+            var sw = Stopwatch.StartNew();
+            ResultExecute resultExecute;
+            try
+            {
+                resultExecute = await handleMessage.ExecuteAsync(message, chatDto);
+            }
+            catch (Exception ex)
+            {
+                sw.Stop();
+                Log.Error(ex,
+                    "Download handler threw: utc={Utc:o} chat={Chat} msgId={MsgId} type={Type} elapsedMs={Ms}",
+                    DateTime.UtcNow, chatDto.Name, message.ID, type, sw.ElapsedMilliseconds);
+                throw;
+            }
+
+            sw.Stop();
+            resultExecute.MessageType = type.ToString();
+            LogDownloadOutcome(message, chatDto, type, resultExecute, sw.ElapsedMilliseconds, logLifecycle);
+            return resultExecute;
+        }
+
+        /// <summary>
+        /// True when the message may perform network I/O (media, URL plugins, or filter text capture).
+        /// Used to avoid spamming logs for plain text that no plugin handles.
+        /// </summary>
+        private static bool ExpectsDownloadLogLifecycle(Message message, MessageTypes type, ChatDto chatDto)
+        {
+            if (type != MessageTypes.Message) return true;
+            if (message.media != null) return true;
+            var text = message.message ?? string.Empty;
+            if (text.Contains("http", StringComparison.OrdinalIgnoreCase)) return true;
+            if (chatDto.IgnoreFileByRegex.Count > 0 && chatDto.IgnoreFileByRegex.Any(p =>
+                    !string.IsNullOrEmpty(text) &&
+                    Regex.IsMatch(text, p, RegexOptions.IgnoreCase)))
+                return true;
+            return false;
+        }
+
+        private static void LogDownloadOutcome(
+            Message message, ChatDto chatDto, MessageTypes type,
+            ResultExecute r, long elapsedMs, bool logLifecycle)
+        {
+            var interesting = logLifecycle
+                || (r.IsSuccess && (!string.IsNullOrEmpty(r.FileName) || !string.IsNullOrEmpty(r.FilePath)))
+                || (r.IsSuccess && !string.IsNullOrEmpty(r.ErrorMessage))
+                || !r.IsSuccess;
+
+            if (!interesting)
+            {
+                Log.Debug("Message pipeline finished with no download work: chat={Chat} msgId={MsgId}",
+                    chatDto.Name, message.ID);
+                return;
+            }
+
+            if (r.IsSuccess && !string.IsNullOrEmpty(r.ErrorMessage))
+            {
+                Log.Information(
+                    "Download skipped after check: utc={Utc:o} chat={Chat} msgId={MsgId} type={Type} elapsedMs={Ms} detail={Detail}",
+                    DateTime.UtcNow, chatDto.Name, message.ID, type, elapsedMs, r.ErrorMessage);
+                return;
+            }
+
+            if (r.IsSuccess)
+            {
+                Log.Information(
+                    "Download completed: utc={Utc:o} chat={Chat} msgId={MsgId} type={Type} file={File} path={Path} elapsedMs={Ms}",
+                    DateTime.UtcNow, chatDto.Name, message.ID, type,
+                    string.IsNullOrEmpty(r.FileName) ? "—" : r.FileName,
+                    string.IsNullOrEmpty(r.FilePath) ? "—" : r.FilePath,
+                    elapsedMs);
+                return;
+            }
+
+            Log.Warning(
+                "Download failed: utc={Utc:o} chat={Chat} msgId={MsgId} type={Type} file={File} error={Error} elapsedMs={Ms}",
+                DateTime.UtcNow, chatDto.Name, message.ID, type,
+                string.IsNullOrEmpty(r.FileName) ? "—" : r.FileName,
+                r.ErrorMessage ?? "",
+                elapsedMs);
         }
 
         public MessageTypes GetTypeOfMessage(Message message)

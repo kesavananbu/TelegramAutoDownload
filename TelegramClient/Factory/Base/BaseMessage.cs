@@ -165,6 +165,9 @@ namespace TelegramClient.Factory.Base
                 folderName = folderName.Replace(c, ' ');
             }
 
+            folderName = folderName.Replace('~', ' ');
+            fileName = fileName.Replace('~', ' ');
+
             // Custom folder template takes priority over the default {Type}/{ChatName} layout.
             var resolvedTemplate = FolderTemplateHelper.Resolve(
                 chatDto.FolderTemplate, TypeMessage.ToString(), folderName);

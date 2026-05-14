@@ -32,5 +32,15 @@ namespace TelegramAutoDownload.Tests
                 root, "{Platform}", "Bad:name", "X", "{Platform}");
             path.Should().Be(@"C:\dl\Bad_name");
         }
+
+        [Fact]
+        public void Combine_ChatNameWithTilde_IsSanitized()
+        {
+            var root = @"C:\dl";
+            var path = PluginFolderPathHelper.CombineUnderDownloadRoot(
+                root, "{ChatName}", "YouTube", "Movies ~ HD", "{Platform}/{ChatName}");
+            path.Should().NotContain("~");
+            path.Should().Contain("Movies");
+        }
     }
 }

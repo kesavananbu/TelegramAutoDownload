@@ -278,7 +278,7 @@ namespace TelegramAutoDownload
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"RefreshChatsFromTelegramAsync error: {ex.Message}");
+                Log.Warning(ex, "RefreshChatsFromTelegramAsync failed");
             }
         }
 

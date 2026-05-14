@@ -62,8 +62,8 @@ namespace TelegramAutoDownload.Services
                 foreach (var item in stuck)
                 {
                     Serilog.Log.Warning(
-                        "Watchdog: cancelling stuck download {File} in {Chat} (no progress for {Min} min)",
-                        item.FileName, item.ChatName,
+                        "Watchdog: cancelling stuck download at {Utc:o} — file={File} chat={Chat} noProgressMinutes={Min}",
+                        DateTime.UtcNow, item.FileName, item.ChatName,
                         (int)(now - item.LastProgressTime).TotalMinutes);
 
                     // Prefer the stored CancellationKey (set when the real filename is known).
@@ -274,7 +274,6 @@ namespace TelegramAutoDownload.Services
                     double durationSec = (DateTime.UtcNow - item.StartTime).TotalSeconds;
                     DownloadCompleted?.Invoke(chatName, fileName, bytes, durationSec);
                 }
-
                 // Release the cancellation token — fall back to computing the key from
                 // chatName+fileName in case CancellationKey was never set (e.g. very fast download)
                 var cleanupKey = !string.IsNullOrEmpty(item.CancellationKey)

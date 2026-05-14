@@ -1,4 +1,5 @@
 ﻿using BasePlugins;
+using Serilog;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -171,7 +172,7 @@ namespace TelegramClient
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"RefreshMessageAsync failed for msg {msgId} in {chatDto.Name}: {ex.Message}");
+                Log.Warning(ex, "RefreshMessageAsync failed for msg {MsgId} in chat {ChatName}", msgId, chatDto.Name);
                 return null;
             }
         }
@@ -589,7 +590,7 @@ namespace TelegramClient
             catch (Exception ex)
             {
                 onStatus?.Invoke($"Sync failed: {ex.Message}");
-                System.Diagnostics.Debug.WriteLine($"SyncHistoryAsync failed: {ex.Message}");
+                Log.Error(ex, "SyncHistoryAsync failed for chat {ChatName}", chatDto.Name);
             }
         }
 
@@ -683,7 +684,7 @@ namespace TelegramClient
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"GetRecentMessagesAsync failed: {ex.Message}");
+                Log.Warning(ex, "GetRecentMessagesAsync failed for chat {ChatName}", chatDto.Name);
                 return [];
             }
         }
@@ -710,7 +711,7 @@ namespace TelegramClient
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"FetchBrowseHistoryPageAsync failed: {ex.Message}");
+                Log.Warning(ex, "FetchBrowseHistoryPageAsync failed for chat {ChatName}", chatDto.Name);
                 return (Array.Empty<Message>(), offsetId, false);
             }
         }
@@ -927,7 +928,7 @@ namespace TelegramClient
             catch (OperationCanceledException) { /* caller cancelled */ }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"GetChannelMembersAsync failed: {ex.Message}");
+                Log.Warning(ex, "GetChannelMembersAsync failed for chat {ChatName}", chatDto.Name);
             }
             return result;
         }
@@ -1040,7 +1041,7 @@ namespace TelegramClient
             catch (Exception ex)
             {
                 onStatus?.Invoke($"History export failed: {ex.Message}");
-                System.Diagnostics.Debug.WriteLine($"ExportChatHistoryAsync failed for {chatDto.Name}: {ex}");
+                Log.Error(ex, "ExportChatHistoryAsync failed for chat {ChatName}", chatDto.Name);
             }
         }
 
@@ -1256,7 +1257,7 @@ namespace TelegramClient
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"ProcessMissedMessagesAsync failed for channel {channelId}: {ex.Message}");
+                Log.Warning(ex, "ProcessMissedMessagesAsync failed for channel {ChannelId}", channelId);
             }
         }
 
@@ -1440,7 +1441,7 @@ namespace TelegramClient
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"MuteChatAsync failed for {chatDto.Name}: {ex.Message}");
+                Log.Warning(ex, "MuteChatAsync failed for chat {ChatName}", chatDto.Name);
                 throw;
             }
         }
