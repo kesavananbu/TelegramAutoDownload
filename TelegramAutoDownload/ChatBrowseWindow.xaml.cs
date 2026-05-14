@@ -34,9 +34,54 @@ namespace TelegramAutoDownload
             Loaded += async (_, _) => await LoadFirstPageAsync();
         }
 
+        private void RebuildKindQuickSelectButtons()
+        {
+            panelKindQuickSelect.Children.Clear();
+            var kinds = Rows
+                .Select(r => r.KindText)
+                .Where(k => !string.IsNullOrWhiteSpace(k) && k != "—")
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(k => k, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            foreach (var kind in kinds)
+            {
+                var k = kind;
+                var btn = new Button
+                {
+                    Content = $"Only {k}",
+                    Margin = new Thickness(0, 0, 6, 6),
+                    Padding = new Thickness(10, 4, 10, 4),
+                    MinHeight = 28,
+                    ToolTip = $"Select all downloadable “{k}” rows and clear other checkboxes.",
+                };
+                btn.Click += (_, _) => SelectOnlyKind(k);
+                panelKindQuickSelect.Children.Add(btn);
+            }
+        }
+
+        private void SelectOnlyKind(string kind)
+        {
+            foreach (var row in Rows)
+                row.IsSelected = row.CanDownload && string.Equals(row.KindText, kind, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void BtnClearSelection_OnClick(object sender, RoutedEventArgs e)
+        {
+            foreach (var row in Rows)
+                row.IsSelected = false;
+        }
+
+        private void BtnSelectAllDownloadable_OnClick(object sender, RoutedEventArgs e)
+        {
+            foreach (var row in Rows)
+                row.IsSelected = row.CanDownload;
+        }
+
         private async Task LoadFirstPageAsync()
         {
             Rows.Clear();
+            RebuildKindQuickSelectButtons();
             _nextOffset = 0;
             _hasMore = true;
             await LoadPageAsync();
@@ -55,6 +100,7 @@ namespace TelegramAutoDownload
                 _hasMore = hasMore;
                 foreach (var m in page.OrderByDescending(x => x.ID))
                     Rows.Add(new ChatBrowseRow(m, _chat));
+                RebuildKindQuickSelectButtons();
                 tbStatus.Text = Rows.Count == 0
                     ? "No messages loaded."
                     : $"{Rows.Count} messages — use Load older for more history.";

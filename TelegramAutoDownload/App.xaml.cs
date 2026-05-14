@@ -20,7 +20,7 @@ namespace TelegramAutoDownload
                 .WriteTo.File(System.IO.Path.Combine(AppPaths.LogsDir, "app-.log"),
                     rollingInterval: RollingInterval.Day,
                     retainedFileCountLimit: 7,
-                    outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
+                    outputTemplate: SerilogFileSettings.FileOutputTemplate)
                 .CreateLogger();
 
             // --- Global exception handlers: log and show instead of crashing ---

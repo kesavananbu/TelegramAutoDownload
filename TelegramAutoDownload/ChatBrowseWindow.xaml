@@ -4,15 +4,15 @@
         xmlns:mah="http://metro.mahapps.com/winfx/xaml/controls"
         Title="Chat messages"
         Height="680" Width="920"
-        MinHeight="480" MinWidth="720"
+        MinHeight="420" MinWidth="520"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
 
     <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="140"/>
+            <RowDefinition Height="*" MinHeight="80"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
@@ -21,10 +21,25 @@
 
         <Grid Grid.Row="1">
             <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
-            <ListView x:Name="lvMessages" Grid.Row="0"
+
+            <StackPanel Grid.Row="0" Margin="0,0,0,8">
+                <TextBlock Text="Select by kind (loaded messages)" FontWeight="SemiBold" Foreground="#333" Margin="0,0,0,6"/>
+                <WrapPanel x:Name="panelKindQuickSelect" Orientation="Horizontal"/>
+                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                    <Button x:Name="btnSelectAllDownloadable" Content="All downloadable" Height="28" Padding="12,0"
+                            Click="BtnSelectAllDownloadable_OnClick" Margin="0,0,8,0"
+                            ToolTip="Select every message that can be downloaded"/>
+                    <Button Content="Clear selection" Height="28" Padding="12,0"
+                            Click="BtnClearSelection_OnClick"
+                            ToolTip="Uncheck all rows"/>
+                </StackPanel>
+            </StackPanel>
+
+            <ListView x:Name="lvMessages" Grid.Row="1"
                       SelectionMode="Single"
                       SelectionChanged="LvMessages_OnSelectionChanged">
                 <ListView.View>
@@ -41,30 +56,38 @@
                         <GridViewColumn Header="ID" DisplayMemberBinding="{Binding MessageId}" Width="72"/>
                         <GridViewColumn Header="Date" DisplayMemberBinding="{Binding DateText}" Width="130"/>
                         <GridViewColumn Header="Kind" DisplayMemberBinding="{Binding KindText}" Width="80"/>
-                        <GridViewColumn Header="Preview" DisplayMemberBinding="{Binding PreviewText}" Width="520"/>
+                        <GridViewColumn Header="Preview" DisplayMemberBinding="{Binding PreviewText}" Width="400"/>
                     </GridView>
                 </ListView.View>
             </ListView>
-            <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,0">
+            <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,8,0,0">
                 <Button x:Name="btnLoadOlder" Content="Load older…" Width="120" Height="30"
                         Click="BtnLoadOlder_OnClick" Margin="0,0,8,0"/>
                 <TextBlock x:Name="tbStatus" VerticalAlignment="Center" Foreground="#666" FontSize="11"/>
             </StackPanel>
         </Grid>
 
-        <GroupBox Grid.Row="2" Header="Full message text" Margin="0,8,0,0" Padding="6">
-            <TextBox x:Name="tbDetail" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+        <GroupBox Grid.Row="2" Header="Full message text" Margin="0,8,0,0" Padding="6"
+                  MinHeight="72" MaxHeight="220">
+            <TextBox x:Name="tbDetail" IsReadOnly="True" TextWrapping="Wrap"
+                     VerticalScrollBarVisibility="Auto" MaxHeight="180"
                      FontFamily="Consolas" FontSize="12"/>
         </GroupBox>
 
-        <DockPanel Grid.Row="3" Margin="0,12,0,0" LastChildFill="False">
-            <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Foreground="#888" FontSize="11"
+        <!-- Footer: help text wraps on its own row so action buttons are never clipped horizontally. -->
+        <Grid Grid.Row="3" Margin="0,12,0,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <TextBlock Grid.Row="0" Foreground="#888" FontSize="11" TextWrapping="Wrap"
                        Text="Select any message with text or media. Native files use Photos/Videos/Files/Music folders; URLs use plugins; plain text (no link) saves under Messages. Works even if the chat is not active in the main list."/>
-            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                <Button x:Name="btnDownload" Content="Download selected" Width="150" Height="32" Margin="0,0,8,0"
+            <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right"
+                        Margin="0,10,0,0">
+                <Button x:Name="btnDownload" Content="Download selected" MinWidth="140" Height="32" Padding="12,0" Margin="0,0,8,0"
                         Click="BtnDownload_OnClick"/>
-                <Button Content="Close" Width="80" Height="32" IsCancel="True" Click="BtnClose_OnClick"/>
+                <Button Content="Close" MinWidth="72" Height="32" Padding="12,0" IsCancel="True" Click="BtnClose_OnClick"/>
             </StackPanel>
-        </DockPanel>
+        </Grid>
     </Grid>
 </mah:MetroWindow>

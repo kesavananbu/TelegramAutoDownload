@@ -108,11 +108,12 @@ namespace TelegramClient.Factory.Service
         private async Task<ResultExecute> RunHandlerAsync(Message message, ChatDto chatDto)
         {
             var type = GetTypeOfMessage(message);
+            var kindLabel = type.ToString();
             var handleMessage = messageTypes.FirstOrDefault(a => a.TypeMessage.Equals(type));
             if (handleMessage == null)
             {
-                Log.Debug("No download handler for chat={Chat} msgId={MsgId} inferredType={Type}",
-                    chatDto.Name, message.ID, type);
+                Log.Debug("No download handler for chat={Chat} msgId={MsgId} inferredKind={Kind}",
+                    chatDto.Name, message.ID, kindLabel);
                 return new ResultExecute(chatDto.Name);
             }
 
@@ -120,8 +121,8 @@ namespace TelegramClient.Factory.Service
             if (!downloadPolicyResult.IsSuccess)
             {
                 Log.Information(
-                    "Download blocked by policy: utc={Utc:o} chat={Chat} msgId={MsgId} type={Type} reason={Reason}",
-                    DateTime.UtcNow, chatDto.Name, message.ID, type, downloadPolicyResult.ErrorMessage ?? "");
+                    "Download blocked by policy: utc={Utc:o} chat={Chat} msgId={MsgId} kind={Kind} reason={Reason}",
+                    DateTime.UtcNow, chatDto.Name, message.ID, kindLabel, downloadPolicyResult.ErrorMessage ?? "");
                 return downloadPolicyResult;
             }
 
@@ -129,8 +130,8 @@ namespace TelegramClient.Factory.Service
             if (logLifecycle)
             {
                 Log.Information(
-                    "Download started: utc={Utc:o} chat={Chat} msgId={MsgId} type={Type}",
-                    DateTime.UtcNow, chatDto.Name, message.ID, type);
+                    "Download started: utc={Utc:o} chat={Chat} msgId={MsgId} kind={Kind}",
+                    DateTime.UtcNow, chatDto.Name, message.ID, kindLabel);
             }
 
             var sw = Stopwatch.StartNew();
@@ -143,14 +144,14 @@ namespace TelegramClient.Factory.Service
             {
                 sw.Stop();
                 Log.Error(ex,
-                    "Download handler threw: utc={Utc:o} chat={Chat} msgId={MsgId} type={Type} elapsedMs={Ms}",
-                    DateTime.UtcNow, chatDto.Name, message.ID, type, sw.ElapsedMilliseconds);
+                    "Download handler threw: utc={Utc:o} chat={Chat} msgId={MsgId} kind={Kind} elapsedMs={Ms}",
+                    DateTime.UtcNow, chatDto.Name, message.ID, kindLabel, sw.ElapsedMilliseconds);
                 throw;
             }
 
             sw.Stop();
             resultExecute.MessageType = type.ToString();
-            LogDownloadOutcome(message, chatDto, type, resultExecute, sw.ElapsedMilliseconds, logLifecycle);
+            LogDownloadOutcome(message, chatDto, kindLabel, resultExecute, sw.ElapsedMilliseconds, logLifecycle);
             return resultExecute;
         }
 
@@ -172,7 +173,7 @@ namespace TelegramClient.Factory.Service
         }
 
         private static void LogDownloadOutcome(
-            Message message, ChatDto chatDto, MessageTypes type,
+            Message message, ChatDto chatDto, string kindLabel,
             ResultExecute r, long elapsedMs, bool logLifecycle)
         {
             var interesting = logLifecycle
@@ -190,27 +191,28 @@ namespace TelegramClient.Factory.Service
             if (r.IsSuccess && !string.IsNullOrEmpty(r.ErrorMessage))
             {
                 Log.Information(
-                    "Download skipped after check: utc={Utc:o} chat={Chat} msgId={MsgId} type={Type} elapsedMs={Ms} detail={Detail}",
-                    DateTime.UtcNow, chatDto.Name, message.ID, type, elapsedMs, r.ErrorMessage);
+                    "Download skipped after check: utc={Utc:o} chat={Chat} msgId={MsgId} kind={Kind} elapsedMs={Ms} detail={Detail}",
+                    DateTime.UtcNow, chatDto.Name, message.ID, kindLabel, elapsedMs, r.ErrorMessage);
                 return;
             }
 
             if (r.IsSuccess)
             {
                 Log.Information(
-                    "Download completed: utc={Utc:o} chat={Chat} msgId={MsgId} type={Type} file={File} path={Path} elapsedMs={Ms}",
-                    DateTime.UtcNow, chatDto.Name, message.ID, type,
+                    "Download completed: utc={Utc:o} chat={Chat} msgId={MsgId} kind={Kind} file={File} path={Path} elapsedMs={Ms}",
+                    DateTime.UtcNow, chatDto.Name, message.ID, kindLabel,
                     string.IsNullOrEmpty(r.FileName) ? "—" : r.FileName,
                     string.IsNullOrEmpty(r.FilePath) ? "—" : r.FilePath,
                     elapsedMs);
                 return;
             }
 
+            var err = string.IsNullOrWhiteSpace(r.ErrorMessage) ? "(no error text supplied)" : r.ErrorMessage;
             Log.Warning(
-                "Download failed: utc={Utc:o} chat={Chat} msgId={MsgId} type={Type} file={File} error={Error} elapsedMs={Ms}",
-                DateTime.UtcNow, chatDto.Name, message.ID, type,
+                "Download failed: utc={Utc:o} chat={Chat} msgId={MsgId} kind={Kind} file={File} error={Error} elapsedMs={Ms}",
+                DateTime.UtcNow, chatDto.Name, message.ID, kindLabel,
                 string.IsNullOrEmpty(r.FileName) ? "—" : r.FileName,
-                r.ErrorMessage ?? "",
+                err,
                 elapsedMs);
         }
 

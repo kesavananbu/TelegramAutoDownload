@@ -89,6 +89,14 @@ namespace TelegramClient.Factory.Service
         public override async Task<ResultExecute> ExecuteAsync(Message message, ChatDto chatDto)
         {
             ResultExecute resultExecute = new(chatDto.Name);
+            if (_pluginTypes.Count == 0)
+            {
+                resultExecute.ErrorMessage =
+                    "No URL plugin assemblies are loaded (Plugins folder missing, empty, or DLLs failed to load).";
+                return resultExecute;
+            }
+
+            var pluginRan = false;
             var split = (message.message ?? string.Empty).Split('\n');
             foreach (var line in split)
             {
@@ -133,13 +141,31 @@ namespace TelegramClient.Factory.Service
                     pluginInstance.OnProgress = OnProgress;
                     pluginInstance.OnComplete = OnComplete;
 
+                    pluginRan = true;
                     resultExecute = await pluginInstance.ExecuteAsync(config);
                     if (resultExecute.IsSuccess) break;
                 }
 
                 if (resultExecute.IsSuccess) break;
             }
+
+            if (!resultExecute.IsSuccess && string.IsNullOrWhiteSpace(resultExecute.ErrorMessage))
+                resultExecute.ErrorMessage = ExplainPluginOutcome(message, pluginRan);
+
             return resultExecute;
+        }
+
+        private static string ExplainPluginOutcome(Message message, bool pluginRan)
+        {
+            var blob = message.message ?? string.Empty;
+            if (!pluginRan)
+            {
+                if (!blob.Contains("http", StringComparison.OrdinalIgnoreCase))
+                    return "No http/https URL in this message for URL plugins to download.";
+                return "URL(s) found but no enabled plugin handled them (enable YouTube / Social media / Other / Torrent per chat, or URL pattern not supported).";
+            }
+
+            return "A plugin ran but returned failure with no error message.";
         }
     }
 }
