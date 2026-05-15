@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.7.14] - 2026-05-15
+
+### Note
+
+- **Stable rollback release** — same codebase as v2.7.4 (recommended if v2.7.5–v2.7.13 caused login, chat list, or download issues). Version **2.7.14** so the in-app updater can install it over newer builds.
+
 ## [2.0.0] - 2026-05-05
 
 ### Added
