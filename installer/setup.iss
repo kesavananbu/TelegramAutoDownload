@@ -5,7 +5,7 @@
 #define AppExeName "TelegramAutoDownload.exe"
 #define SourceDir "..\publish"
 #define OutputDir ".."
-#define OutputName "TelegramAutoDownload_v2.7.4_Setup"
+#define OutputName "TelegramAutoDownload_v" + AppVersion + "_Setup"
 
 [Setup]
 AppId={{A3F2C8E1-4D7B-4E9A-B5C0-1234567890AB}
