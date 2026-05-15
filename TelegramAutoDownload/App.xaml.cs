@@ -6,6 +6,7 @@ using System.Drawing;
 using System.Windows;
 using WinForms = System.Windows.Forms;
 using TelegramAutoDownload.Models;
+using TelegramAutoDownload.Services;
 
 namespace TelegramAutoDownload
 {
@@ -21,6 +22,7 @@ namespace TelegramAutoDownload
                     rollingInterval: RollingInterval.Day,
                     retainedFileCountLimit: 7,
                     outputTemplate: SerilogFileSettings.FileOutputTemplate)
+                .WriteTo.Sink(new LogAlertSink(SerilogFileSettings.FileOutputTemplate))
                 .CreateLogger();
 
             // --- Global exception handlers: log and show instead of crashing ---

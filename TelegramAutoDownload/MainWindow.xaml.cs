@@ -129,6 +129,27 @@ namespace TelegramAutoDownload
 
             // Bootstrap StatisticsService (singleton) and refresh all-time counters whenever they change
             StatisticsService.Instance.Changed += UpdateStatsStrip;
+
+            // Show/hide the error blink button whenever a new warning/error is logged
+            AppLogAlertService.Instance.Changed += OnLogAlertChanged;
+        }
+
+        private void OnLogAlertChanged()
+        {
+            var hasAlert = AppLogAlertService.Instance.UnreadCount > 0;
+            btnErrorLog.Visibility = hasAlert ? Visibility.Visible : Visibility.Collapsed;
+            if (hasAlert)
+                ((System.Windows.Media.Animation.Storyboard)Resources["BlinkError"]).Begin();
+            else
+                ((System.Windows.Media.Animation.Storyboard)Resources["BlinkError"]).Stop();
+        }
+
+        private void BtnErrorLog_Click(object sender, RoutedEventArgs e)
+        {
+            var pointer = AppLogAlertService.Instance.Latest;
+            AppLogAlertService.Instance.Clear();
+            var viewer = new LogViewerWindow(pointer?.FilePath, pointer?.SearchText) { Owner = this };
+            viewer.Show();
         }
 
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)

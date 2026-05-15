@@ -22,6 +22,15 @@
             </DoubleAnimationUsingKeyFrames>
         </Storyboard>
 
+        <Storyboard x:Key="BlinkError" RepeatBehavior="Forever">
+            <DoubleAnimationUsingKeyFrames Storyboard.TargetName="btnErrorLog"
+                                           Storyboard.TargetProperty="Opacity">
+                <DiscreteDoubleKeyFrame KeyTime="0:0:0.0" Value="1.0"/>
+                <DiscreteDoubleKeyFrame KeyTime="0:0:0.5" Value="0.25"/>
+                <DiscreteDoubleKeyFrame KeyTime="0:0:1.0" Value="1.0"/>
+            </DoubleAnimationUsingKeyFrames>
+        </Storyboard>
+
         <conv:StringNotEmptyConverter     x:Key="StringNotEmpty"/>
         <conv:CollectionNotEmptyConverter x:Key="CollectionNotEmpty"/>
 
@@ -623,7 +632,17 @@
             <DockPanel>
                 <!-- Right: version + connection dot + path controls -->
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button x:Name="btnAppVersion" Content="v2.2.25"
+                    <Button x:Name="btnErrorLog"
+                            Visibility="Collapsed"
+                            Height="22" Padding="8,0" Margin="0,0,10,0"
+                            Background="#D32F2F" Foreground="White"
+                            BorderThickness="0" Cursor="Hand"
+                            VerticalAlignment="Center"
+                            ToolTip="Error(s) detected — click to view logs"
+                            Click="BtnErrorLog_Click">
+                        <TextBlock Text="⚠ Errors" FontWeight="SemiBold" FontSize="11"/>
+                    </Button>
+                    <Button x:Name="btnAppVersion" Content="v2.8.0"
                             Style="{x:Null}"
                             Background="Transparent" BorderThickness="0"
                             Foreground="#999" Cursor="Hand" Padding="4,0"

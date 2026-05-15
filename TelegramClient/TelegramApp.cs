@@ -127,7 +127,7 @@ namespace TelegramClient
         public void UpdateConfig(ConfigParams configParams)
         {
             _configParams = configParams;
-            var chatIds = configParams.Chats?.Select(c => c.Id).ToList() ?? new List<long>();
+            var chatIds = configParams.Chats?.Where(c => c.Selected).Select(c => c.Id).ToList() ?? new List<long>();
             factoryService = new FactoryMessagesService(Client, configParams.PathSaveFile ?? string.Empty);
             factoryService.OnProgress = OnProgress;
             factoryService.OnComplete = OnComplete;
@@ -1138,9 +1138,9 @@ namespace TelegramClient
             return null;
         }
 
-        /// <summary>Returns the monitored ChatDto for a given peer ID, or null if not monitored.</summary>
+        /// <summary>Returns the monitored ChatDto for a given peer ID, or null if not monitored or not active.</summary>
         private ChatDto? FindMonitoredChat(long peerId) =>
-            _configParams?.Chats?.FirstOrDefault(c => c.Id == peerId || c.Id == -peerId);
+            _configParams?.Chats?.FirstOrDefault(c => (c.Id == peerId || c.Id == -peerId) && c.Selected);
 
         /// <summary>
         /// Saves the text content of a message that matched a Filter regex pattern to a .txt file.
@@ -1540,7 +1540,14 @@ namespace TelegramClient
                 if (topMsg == null) break;
                 offsetDate = topMsg.Date;
 
-                var peerId = lastDialog.peer; // long in WTelegram 4.x
+                // WTelegramClient 4.3.13 removed the implicit Peer→long cast; extract ID manually.
+                long peerId = lastDialog.peer switch
+                {
+                    PeerChannel pc => pc.channel_id,
+                    PeerChat    pg => pg.chat_id,
+                    PeerUser    pu => pu.user_id,
+                    _              => 0,
+                };
                 bool peerResolved = false;
                 if (pageChats.TryGetValue(peerId, out var peerChatBase))
                 {

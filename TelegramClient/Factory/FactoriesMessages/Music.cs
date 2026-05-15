@@ -63,7 +63,7 @@ namespace TelegramClient.Factory.FactoriesMessages
                         // Resume from existing .part file if present; WTelegram reads stream.Position as offset
                         using var stream = OpenOrResumePartFile(partPath);
                         using var _ = downloadToken.Register(() => { try { stream.Dispose(); } catch { } });
-                        await Client.DownloadFileAsync(document, stream, null, progress);
+                        await Client.DownloadFileAsync(document, stream, (TL.PhotoSizeBase?)null, progress);
                         return true;
                     }, downloadToken);
                     File.Move(partPath, pathFolderLocation, overwrite: true);

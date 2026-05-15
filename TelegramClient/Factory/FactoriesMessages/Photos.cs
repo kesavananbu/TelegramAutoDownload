@@ -64,7 +64,7 @@ namespace TelegramClient.Factory.Factories
                         using var fileStream = File.Create(savedPath);
                         // Dispose the stream on cancel so a hung DownloadFileAsync is force-interrupted
                         using var _ = downloadToken.Register(() => { try { fileStream.Dispose(); } catch { } });
-                        await Client.DownloadFileAsync(document, fileStream, null, progress);
+                        await Client.DownloadFileAsync(document, fileStream, (TL.PhotoSizeBase?)null, progress);
                         return true;
                     }, downloadToken);
                     FileDownloadIndex.MarkDownloaded(document.ID);
