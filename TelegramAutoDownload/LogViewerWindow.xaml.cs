@@ -13,9 +13,19 @@ namespace TelegramAutoDownload
     {
         private const int MaxChars = 600_000;
 
-        public LogViewerWindow()
+        // Optional navigation anchor set when the window is opened from the error-alert button
+        private string? _anchorFilePath;
+        private string? _anchorSearchText;
+
+        public LogViewerWindow() : this(null, null) { }
+
+        /// <param name="anchorFilePath">Log file to pre-select (null = most-recent).</param>
+        /// <param name="anchorSearchText">Text to scroll to inside the file (null = no scroll).</param>
+        public LogViewerWindow(string? anchorFilePath, string? anchorSearchText)
         {
             InitializeComponent();
+            _anchorFilePath   = anchorFilePath;
+            _anchorSearchText = anchorSearchText;
             Loaded += (_, _) => RefreshFileList(selectFirst: true);
         }
 
@@ -35,7 +45,15 @@ namespace TelegramAutoDownload
             foreach (var path in files)
                 lstLogs.Items.Add(path);
 
-            if (selectFirst && lstLogs.Items.Count > 0)
+            // If an anchor file path was given, pre-select it; otherwise default to first
+            if (_anchorFilePath != null)
+            {
+                var target = files.FirstOrDefault(f => string.Equals(f, _anchorFilePath, StringComparison.OrdinalIgnoreCase))
+                             ?? files.FirstOrDefault();
+                if (target != null)
+                    lstLogs.SelectedItem = target;
+            }
+            else if (selectFirst && lstLogs.Items.Count > 0)
                 lstLogs.SelectedIndex = 0;
         }
 
@@ -50,11 +68,29 @@ namespace TelegramAutoDownload
             try
             {
                 tbContent.Text = ReadLogTail(path, MaxChars);
+                ScrollToPointer();
             }
             catch (Exception ex)
             {
                 tbContent.Text = ex.ToString();
             }
+        }
+
+        private void ScrollToPointer()
+        {
+            if (string.IsNullOrEmpty(_anchorSearchText)) return;
+
+            var text = tbContent.Text;
+            // Prefer the last occurrence (most recent log entry in the tail)
+            var idx = text.LastIndexOf(_anchorSearchText, StringComparison.OrdinalIgnoreCase);
+            if (idx < 0)
+                idx = text.IndexOf(_anchorSearchText, StringComparison.OrdinalIgnoreCase);
+            if (idx < 0) return;
+
+            tbContent.Focus();
+            tbContent.SelectionStart  = idx;
+            tbContent.SelectionLength = Math.Min(_anchorSearchText.Length, text.Length - idx);
+            tbContent.ScrollToLine(tbContent.GetLineIndexFromCharacterIndex(idx));
         }
 
         private static string ReadLogTail(string path, int maxChars)
