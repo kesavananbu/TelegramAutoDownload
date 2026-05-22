@@ -34,13 +34,7 @@ namespace TelegramAutoDownload
             }
 
             // Initialize the logger FIRST so exception handlers can write to it immediately.
-            Log.Logger = new LoggerConfiguration()
-                .WriteTo.File(System.IO.Path.Combine(AppPaths.LogsDir, "app-.log"),
-                    rollingInterval: RollingInterval.Day,
-                    retainedFileCountLimit: 7,
-                    outputTemplate: SerilogFileSettings.FileOutputTemplate)
-                .WriteTo.Sink(new LogAlertSink(SerilogFileSettings.FileOutputTemplate))
-                .CreateLogger();
+            AppLogService.Initialize();
 
             // --- Global exception handlers: log and show instead of crashing ---
             DispatcherUnhandledException += (_, ex) =>
@@ -148,7 +142,7 @@ namespace TelegramAutoDownload
             try { _singleInstanceMutex?.ReleaseMutex(); } catch { }
             _singleInstanceMutex?.Dispose();
             Log.Information("Application shutting down");
-            Log.CloseAndFlush();
+            AppLogService.Shutdown();
             base.OnExit(e);
         }
 

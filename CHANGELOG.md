@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.8.2] - 2026-05-22
+
+### Fixed
+
+- **Log viewer delete** no longer fails with "file is in use" when deleting today's active log — Serilog is closed and reopened automatically
+- Serilog file sink uses `shared: true` so log files can be read while the app is running
+
 ## [2.8.1] - 2026-05-22
 
 ### Fixed

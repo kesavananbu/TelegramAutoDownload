@@ -6,6 +6,7 @@ using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using MahApps.Metro.Controls;
+using TelegramAutoDownload.Services;
 
 namespace TelegramAutoDownload
 {
@@ -154,17 +155,30 @@ namespace TelegramAutoDownload
                 return;
             }
 
-            if (MessageBox.Show(this,
-                    $"Delete this file?\n{Path.GetFileName(path)}",
-                    "Delete log",
+            var isActive = AppLogService.IsActiveLogFile(path);
+            var prompt = isActive
+                ? $"Clear today's active log file?\n{Path.GetFileName(path)}\n\nThe app will briefly reconnect logging after deletion."
+                : $"Delete this file?\n{Path.GetFileName(path)}";
+
+            if (MessageBox.Show(this, prompt, isActive ? "Clear log" : "Delete log",
                     MessageBoxButton.YesNo,
                     MessageBoxImage.Warning) != MessageBoxResult.Yes)
                 return;
 
             try
             {
-                File.Delete(path);
+                AppLogService.DeleteLogFile(path);
+                _anchorFilePath = null;
+                _anchorSearchText = null;
                 RefreshFileList(selectFirst: true);
+            }
+            catch (IOException ex)
+            {
+                MessageBox.Show(this,
+                    $"Could not delete the log file:\n{ex.Message}\n\nTry again after clicking Refresh, or close other programs that may have the file open.",
+                    "Delete failed",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
             }
             catch (Exception ex)
             {
