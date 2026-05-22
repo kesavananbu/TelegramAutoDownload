@@ -19,7 +19,19 @@ namespace TelegramAutoDownload.Tests
         }
 
         [Fact]
-        public void IsBenignNoWorkOutcome_RealDownloadFailure_ReturnsFalse()
+        public void IsUserCancelledOutcome_UserPressedCancel_ReturnsTrue()
+        {
+            var r = new ResultExecute("chat")
+            {
+                IsSuccess = false,
+                ErrorMessage = "Cancelled by user",
+                FileName = "video.mkv",
+            };
+            FactoryMessagesService.IsUserCancelledOutcome(r).Should().BeTrue();
+        }
+
+        [Fact]
+        public void IsUserCancelledOutcome_RealFailure_ReturnsFalse()
         {
             var r = new ResultExecute("chat")
             {

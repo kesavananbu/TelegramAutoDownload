@@ -3,6 +3,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using TelegramClient.Factory.Factories;
 using TelegramClient.Factory.FactoriesMessages.Enum;
@@ -89,6 +90,93 @@ namespace TelegramClient.Factory.Base
             };
 
             return (callback, token, userToken);
+        }
+
+        /// <summary>Waits until the Telegram client is logged in and connected (max ~30 s).</summary>
+        protected async Task WaitForConnectionAsync(CancellationToken ct = default)
+        {
+            for (var i = 0; i < 60; i++)
+            {
+                if (Client.UserId != 0 && !Client.Disconnected)
+                    return;
+                await Task.Delay(500, ct).ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>
+        /// Downloads a document to a .part file with retry, fresh progress tokens per attempt,
+        /// and protection against reconnect interrupting the transfer.
+        /// </summary>
+        protected async Task<ResultExecute> DownloadDocumentAsync(
+            Document document, ChatDto chatDto, string fileName, string pluginName)
+        {
+            var finalPath = PathLocationFolder(chatDto, fileName);
+            var partPath = GetPartFilePath(finalPath);
+            var cancelKey = CancellationRegistry.MakeKey(chatDto.Name, fileName);
+
+            OnProgress?.Invoke(chatDto.Name, fileName, pluginName, 0, 0, document.size);
+            DownloadActivity.Enter();
+            var userCancelToken = CancellationToken.None;
+            try
+            {
+                await WaitForConnectionAsync().ConfigureAwait(false);
+                await WithRetryAsync(async () =>
+                {
+                    var (progress, downloadToken, userToken) = MakeProgress(chatDto.Name, fileName, document.size);
+                    userCancelToken = userToken;
+                    try
+                    {
+                        using var stream = OpenOrResumePartFile(partPath);
+                        using var _ = downloadToken.Register(() => { try { stream.Dispose(); } catch { } });
+                        await Client.DownloadFileAsync(document, stream, (TL.PhotoSizeBase?)null, progress)
+                            .ConfigureAwait(false);
+                        return true;
+                    }
+                    catch (Exception) when (downloadToken.IsCancellationRequested)
+                    {
+                        throw new OperationCanceledException(downloadToken);
+                    }
+                }).ConfigureAwait(false);
+
+                File.Move(partPath, finalPath, overwrite: true);
+                FileDownloadIndex.MarkDownloaded(document.ID);
+                OnComplete?.Invoke(chatDto.Name, fileName, true);
+                return new ResultExecute(chatDto.Name)
+                {
+                    IsSuccess = true,
+                    FileName = fileName,
+                    FilePath = finalPath,
+                };
+            }
+            catch (OperationCanceledException)
+            {
+                if (userCancelToken.IsCancellationRequested)
+                    DeletePartialFile(partPath);
+                return new ResultExecute(chatDto.Name)
+                {
+                    IsSuccess = false,
+                    FileName = fileName,
+                    ErrorMessage = "Cancelled by user",
+                };
+            }
+            catch (Exception ex)
+            {
+                OnComplete?.Invoke(chatDto.Name, fileName, false);
+                var message = userCancelToken.IsCancellationRequested
+                    ? "Cancelled by user"
+                    : $"Download interrupted (partial file kept for resume): {ex.Message}";
+                return new ResultExecute(chatDto.Name)
+                {
+                    IsSuccess = false,
+                    FileName = fileName,
+                    ErrorMessage = message,
+                };
+            }
+            finally
+            {
+                DownloadActivity.Leave();
+                CancellationRegistry.Remove(cancelKey);
+            }
         }
 
         /// <summary>Silently deletes a partially downloaded file after a cancelled download.</summary>

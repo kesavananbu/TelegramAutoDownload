@@ -162,6 +162,11 @@ namespace TelegramClient.Factory.Service
             !r.IsSuccess &&
             (r.ErrorMessage?.StartsWith("No http/https URL", StringComparison.OrdinalIgnoreCase) ?? false);
 
+        /// <summary>User pressed Cancel in the UI — intentional, not an error.</summary>
+        public static bool IsUserCancelledOutcome(ResultExecute r) =>
+            !r.IsSuccess &&
+            string.Equals(r.ErrorMessage, "Cancelled by user", StringComparison.OrdinalIgnoreCase);
+
         /// <summary>
         /// True when the message may perform network I/O (media, URL plugins, or filter text capture).
         /// Used to avoid spamming logs for plain text that no plugin handles.
@@ -210,6 +215,16 @@ namespace TelegramClient.Factory.Service
                     DateTime.UtcNow, chatDto.Name, message.ID, kindLabel,
                     string.IsNullOrEmpty(r.FileName) ? "—" : r.FileName,
                     string.IsNullOrEmpty(r.FilePath) ? "—" : r.FilePath,
+                    elapsedMs);
+                return;
+            }
+
+            if (IsUserCancelledOutcome(r))
+            {
+                Log.Information(
+                    "Download cancelled by user: utc={Utc:o} chat={Chat} msgId={MsgId} kind={Kind} file={File} elapsedMs={Ms}",
+                    DateTime.UtcNow, chatDto.Name, message.ID, kindLabel,
+                    string.IsNullOrEmpty(r.FileName) ? "—" : r.FileName,
                     elapsedMs);
                 return;
             }

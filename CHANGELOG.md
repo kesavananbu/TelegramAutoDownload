@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.8.6] - 2026-05-22
+
+### Fixed
+
+- **Video/file downloads failing after ~3–6 seconds** with "Download cancelled (no progress)" — reconnect no longer interrupts active transfers; each retry gets a fresh progress token; downloads wait for Telegram connection before starting
+- **Manual Cancel** logs as `[INF] Download cancelled by user` instead of `[WRN] Download failed`, and no longer triggers the error alert button
+- User cancel is correctly classified as `"Cancelled by user"` (not confused with timeout/no-progress)
+
 ## [2.8.5] - 2026-05-22
 
 ### Fixed

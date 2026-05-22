@@ -54,39 +54,8 @@ namespace TelegramClient.Factory.Factories
                     FileDownloadIndex.MarkDownloaded(document.ID);
                     return new ResultExecute(chatDto.Name) { IsSuccess = true, FileName = fileName, ErrorMessage = $"{fileName} is exist on {fileExist}" };
                 }
-                savedPath = PathLocationFolder(chatDto, fileName);
-                OnProgress?.Invoke(chatDto.Name, fileName, TypeMessage.ToString(), 0, 0, document.size);
-                var (progress, downloadToken, _) = MakeProgress(chatDto.Name, fileName, document.size);
-                try
-                {
-                    await WithRetryAsync(async () =>
-                    {
-                        using var fileStream = File.Create(savedPath);
-                        // Dispose the stream on cancel so a hung DownloadFileAsync is force-interrupted
-                        using var _ = downloadToken.Register(() => { try { fileStream.Dispose(); } catch { } });
-                        await Client.DownloadFileAsync(document, fileStream, (TL.PhotoSizeBase?)null, progress);
-                        return true;
-                    }, downloadToken);
-                    FileDownloadIndex.MarkDownloaded(document.ID);
-                    OnComplete?.Invoke(chatDto.Name, fileName, true);
-                }
-                catch (OperationCanceledException)
-                {
-                    DeletePartialFile(savedPath);
-                    CancellationRegistry.Remove(CancellationRegistry.MakeKey(chatDto.Name, fileName));
-                    return new ResultExecute(chatDto.Name) { IsSuccess = false, FileName = fileName, ErrorMessage = "Cancelled by user" };
-                }
-                catch (Exception) when (downloadToken.IsCancellationRequested)
-                {
-                    DeletePartialFile(savedPath);
-                    CancellationRegistry.Remove(CancellationRegistry.MakeKey(chatDto.Name, fileName));
-                    return new ResultExecute(chatDto.Name) { IsSuccess = false, FileName = fileName, ErrorMessage = "Download cancelled (no progress)" };
-                }
-                catch (Exception ex)
-                {
-                    OnComplete?.Invoke(chatDto.Name, fileName, false);
-                    return new ResultExecute(chatDto.Name) { IsSuccess = false, FileName = fileName, ErrorMessage = ex.Message };
-                }
+
+                return await DownloadDocumentAsync(document, chatDto, fileName, TypeMessage.ToString());
             }
             else if (message.media is MessageMediaPhoto { photo: Photo photo })
             {

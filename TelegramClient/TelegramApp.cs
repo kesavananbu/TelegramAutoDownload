@@ -375,7 +375,8 @@ namespace TelegramClient
                                         OnSkipped?.Invoke(chat.Name, infoMessage.ID);
                                     }
                                     else if (!string.IsNullOrEmpty(resultExecute.ErrorMessage)
-                                             && !FactoryMessagesService.IsBenignNoWorkOutcome(resultExecute))
+                                             && !FactoryMessagesService.IsBenignNoWorkOutcome(resultExecute)
+                                             && !FactoryMessagesService.IsUserCancelledOutcome(resultExecute))
                                     {
                                         if (OnWarnningMessage != null)
                                             await OnWarnningMessage.Invoke(resultMessageEvent);
@@ -1630,9 +1631,10 @@ namespace TelegramClient
                         if (!connected)
                         {
                             // Reconnecting during an active transfer aborts the download (ConnectAsync resets the client).
-                            if (CancellationRegistry.Count > 0)
+                            if (CancellationRegistry.Count > 0 || DownloadActivity.ActiveCount > 0)
                             {
-                                Log.Debug("Telegram reconnect deferred — {Count} download(s) in progress", CancellationRegistry.Count);
+                                Log.Debug("Telegram reconnect deferred — downloads in progress (registry={Reg}, active={Active})",
+                                    CancellationRegistry.Count, DownloadActivity.ActiveCount);
                                 continue;
                             }
 

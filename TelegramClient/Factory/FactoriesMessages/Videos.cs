@@ -1,6 +1,4 @@
 ﻿using BasePlugins;
-using System;
-using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using TelegramClient.Factory.Base;
@@ -40,18 +38,14 @@ namespace TelegramClient.Factory.Factories
                 fileName = $"{document.ID}.{mime_type}";
             }
 
-            // Primary dedup: Telegram document ID (unique content fingerprint)
             if (FileDownloadIndex.IsAlreadyDownloaded(document.ID))
             {
-                // Verify the file still exists on disk — guards against stale index after reinstall / moved files
                 var existingFile = GetPathOfDuplicateFile(fileName, document.size);
                 if (existingFile != null)
                     return new ResultExecute(chatDto.Name) { IsSuccess = true, FileName = fileName, ErrorMessage = $"{fileName} already downloaded (id match)" };
-                // Stale index entry — file gone from disk, remove and re-download
                 FileDownloadIndex.Remove(document.ID);
             }
 
-            // Secondary dedup: filename + file size match on disk
             var fileExist = GetPathOfDuplicateFile(fileName, document.size);
             if (fileExist != null)
             {
@@ -59,45 +53,7 @@ namespace TelegramClient.Factory.Factories
                 return new ResultExecute(chatDto.Name) { IsSuccess = true, FileName = fileName, ErrorMessage = $"{fileName} is exist on {fileExist}" };
             }
 
-            var pathFolderLocation = PathLocationFolder(chatDto, fileName);
-            var partPath = GetPartFilePath(pathFolderLocation);
-            OnProgress?.Invoke(chatDto.Name, fileName, PluginName, 0, 0, document.size);
-            var (progress, downloadToken, userCancelToken) = MakeProgress(chatDto.Name, fileName, document.size);
-            try
-            {
-                await WithRetryAsync(async () =>
-                {
-                    // Resume from existing .part file if present; WTelegram reads stream.Position as offset
-                    using var stream = OpenOrResumePartFile(partPath);
-                    using var _ = downloadToken.Register(() => { try { stream.Dispose(); } catch { } });
-                    await Client.DownloadFileAsync(document, stream, (TL.PhotoSizeBase?)null, progress);
-                    return true;
-                }, downloadToken);
-                // Rename .part → final name once the download is complete
-                File.Move(partPath, pathFolderLocation, overwrite: true);
-                FileDownloadIndex.MarkDownloaded(document.ID);
-                OnComplete?.Invoke(chatDto.Name, fileName, true);
-                return new ResultExecute(chatDto.Name) { IsSuccess = true, FileName = fileName, FilePath = pathFolderLocation };
-            }
-            catch (OperationCanceledException)
-            {
-                // Delete .part only when the user explicitly cancelled — keep it for resume on timeout/crash
-                if (userCancelToken.IsCancellationRequested)
-                    DeletePartialFile(partPath);
-                CancellationRegistry.Remove(CancellationRegistry.MakeKey(chatDto.Name, fileName));
-                return new ResultExecute(chatDto.Name) { IsSuccess = false, FileName = fileName, ErrorMessage = "Cancelled by user" };
-            }
-            catch (Exception) when (downloadToken.IsCancellationRequested)
-            {
-                // Inactivity timeout or network failure — keep .part file so the next attempt can resume
-                CancellationRegistry.Remove(CancellationRegistry.MakeKey(chatDto.Name, fileName));
-                return new ResultExecute(chatDto.Name) { IsSuccess = false, FileName = fileName, ErrorMessage = "Download cancelled (no progress)" };
-            }
-            catch (Exception e)
-            {
-                OnComplete?.Invoke(chatDto.Name, fileName, false);
-                return new ResultExecute(chatDto.Name) { IsSuccess = false, FileName = fileName, ErrorMessage = e.Message };
-            }
+            return await DownloadDocumentAsync(document, chatDto, fileName, PluginName);
         }
 
     }
