@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.8.3] - 2026-05-22
+
+### Fixed
+
+- **In-app update (Setup.exe)** no longer fails with "Setup was unable to automatically close all applications" — the app exits fully before the installer runs, and the installer force-closes any leftover process
+
 ## [2.8.2] - 2026-05-22
 
 ### Fixed

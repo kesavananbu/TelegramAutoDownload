@@ -6,6 +6,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
 using System.Threading.Tasks;
+using System.Windows;
 
 namespace TelegramAutoDownload.Services
 {
@@ -160,13 +161,28 @@ namespace TelegramAutoDownload.Services
 
                 if (isInstaller)
                 {
-                    // Run the Inno Setup installer — it handles UAC elevation and file replacement.
-                    // /VERYSILENT keeps it quiet; app restart is handled by the installer's [Run] section.
-                    Process.Start(new ProcessStartInfo(tmpFile, "/VERYSILENT /NORESTART /CLOSEAPPLICATIONS")
+                    // Launch the installer only AFTER this process exits so files are not locked.
+                    // MainWindow normally intercepts close with a tray dialog — IsForceShutdown bypasses it.
+                    var pid = Process.GetCurrentProcess().Id;
+                    var batchPath = Path.Combine(Path.GetTempPath(), "tad_setup_updater.bat");
+                    File.WriteAllText(batchPath, $@"@echo off
+:wait
+tasklist /fi ""pid eq {pid}"" | findstr /i ""{pid}"" >nul 2>&1
+if not errorlevel 1 ( timeout /t 1 /nobreak >nul & goto wait )
+""{tmpFile}"" /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS
+del ""%~f0""
+");
+                    Process.Start(new ProcessStartInfo("cmd.exe", $"/c \"{batchPath}\"")
                     {
-                        UseShellExecute = true  // Required for UAC prompt to appear
+                        CreateNoWindow = true,
+                        UseShellExecute = false
                     });
-                    Application.Current.Dispatcher.Invoke(() => Application.Current.Shutdown());
+
+                    Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        App.IsForceShutdown = true;
+                        Application.Current.Shutdown();
+                    });
                 }
                 else
                 {

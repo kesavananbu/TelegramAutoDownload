@@ -1,5 +1,5 @@
 #define AppName "Telegram Auto Download"
-#define AppVersion "2.8.2"
+#define AppVersion "2.8.3"
 #define AppPublisher "TelegramAutoDownload"
 #define AppURL "https://github.com/il90il90/TelegramAutoDownload"
 #define AppExeName "TelegramAutoDownload.exe"
@@ -36,7 +36,7 @@ UninstallDisplayIcon={app}\{#AppExeName}
 UninstallDisplayName={#AppName} v{#AppVersion}
 MinVersion=10.0.17763
 ; Require .NET 8 Desktop Runtime
-CloseApplications=yes
+CloseApplications=force
 CloseApplicationsFilter=*TelegramAutoDownload.exe*
 
 [Languages]
@@ -85,6 +85,14 @@ Filename: "taskkill.exe"; Parameters: "/f /im {#AppExeName}"; Flags: runhidden; 
 [Code]
 // The app is published as a self-contained single-file executable.
 // No external .NET runtime is required — everything is bundled inside TelegramAutoDownload.exe.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var ResultCode: Integer;
+begin
+  // Safety net when auto-update could not exit cleanly before the installer started.
+  Exec('taskkill.exe', '/f /im {#AppExeName}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Result := '';
+end;
+
 function InitializeSetup(): Boolean;
 begin
   Result := True;

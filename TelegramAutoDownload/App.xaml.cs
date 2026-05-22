@@ -17,6 +17,9 @@ namespace TelegramAutoDownload
         public static WinForms.NotifyIcon? TrayIcon { get; private set; }
         private static Mutex? _singleInstanceMutex;
 
+        /// <summary>Set before auto-update shutdown so MainWindow skips the close dialog.</summary>
+        public static bool IsForceShutdown { get; set; }
+
         protected override void OnStartup(StartupEventArgs e)
         {
             // Prevent two instances from fighting over session.dat (WTelegram file lock).
