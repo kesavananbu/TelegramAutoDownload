@@ -61,6 +61,13 @@ namespace TelegramClient
         private FactoryUserService factoryUserService;
         private SemaphoreSlim _semaphore = new SemaphoreSlim(3);
         private readonly Task _loginTask;
+        private readonly CancellationTokenSource _connectionMonitorCts = new();
+
+        /// <summary>True when logged in and the WTelegram TCP session is active.</summary>
+        public bool IsConnected => Client.UserId != 0 && !Client.Disconnected;
+
+        /// <summary>Fired when connection status changes (connected / disconnected).</summary>
+        public event Action<bool>? ConnectionStatusChanged;
 
         // Stored config so we can look up monitored ChatDto objects by peer ID
         private ConfigParams? _configParams;
@@ -86,13 +93,27 @@ namespace TelegramClient
                 "TelegramAutoDownload", "session.dat");
             System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(sessionPath)!);
             Client = new Client(appId, apiHash, sessionPath);
+            Client.MaxAutoReconnects = 5;
             // Store the login task so callers can await it when needed
             _loginTask = Task.Run(async () =>
             {
                 try { await Client.LoginUserIfNeeded(); }
-                catch { /* login handled manually via Login() calls in LoginWindow */ }
+                catch (WTException ex) when (ex.Message.Contains("phone_number", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Expected when session is missing/invalid and LoginWindow will collect credentials.
+                    Log.Debug("Session restore needs manual login: {Message}", ex.Message);
+                }
+                catch (Exception ex) when (NetworkExceptionHelper.IsTransientNetworkError(ex))
+                {
+                    Log.Warning(ex, "Background Telegram login failed due to network error");
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Background Telegram login failed");
+                }
             });
             Client.OnUpdates += Client_OnUpdates;
+            StartConnectionMonitor();
         }
 
         /// <summary>
@@ -112,6 +133,7 @@ namespace TelegramClient
         /// </summary>
         public async Task LogoutAsync()
         {
+            _connectionMonitorCts.Cancel();
             try { await Client.Auth_LogOut(); } catch { /* ignore network errors during logout */ }
 
             // Dispose client to release file locks on the session file
@@ -139,7 +161,11 @@ namespace TelegramClient
             // Clean up stale .part files in the background so startup is not blocked.
             // Files older than 7 days are treated as abandoned (resume is unlikely after that long).
             if (!string.IsNullOrEmpty(configParams.PathSaveFile))
-                _ = Task.Run(() => PartFileCleanup.CleanStaleParts(configParams.PathSaveFile));
+                _ = Task.Run(() =>
+                {
+                    try { PartFileCleanup.CleanStaleParts(configParams.PathSaveFile); }
+                    catch (Exception ex) { Log.Warning(ex, "PartFileCleanup failed"); }
+                });
         }
 
         /// <summary>
@@ -178,6 +204,8 @@ namespace TelegramClient
         }
         private async Task Client_OnUpdates(UpdatesBase updates)
         {
+            try
+            {
             if (factoryUserService == null)
                 return;
 
@@ -396,6 +424,11 @@ namespace TelegramClient
                 }
             }
             await Task.WhenAll(tasks);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Client_OnUpdates handler failed");
+            }
         }
 
         /// <summary>
@@ -926,6 +959,11 @@ namespace TelegramClient
                 }
             }
             catch (OperationCanceledException) { /* caller cancelled */ }
+            catch (Exception ex) when (ex is TL.RpcException { Code: 400 } rpc &&
+                                         rpc.Message.Contains("CHAT_ADMIN_REQUIRED", StringComparison.Ordinal))
+            {
+                Log.Debug("GetChannelMembersAsync skipped for chat {ChatName}: admin rights required", chatDto.Name);
+            }
             catch (Exception ex)
             {
                 Log.Warning(ex, "GetChannelMembersAsync failed for chat {ChatName}", chatDto.Name);
@@ -1563,6 +1601,58 @@ namespace TelegramClient
                 }
                 if (!peerResolved) break;
             }
+        }
+
+        /// <summary>
+        /// Polls WTelegram connection state and attempts reconnect after idle TCP drops.
+        /// </summary>
+        private void StartConnectionMonitor()
+        {
+            _ = Task.Run(async () =>
+            {
+                var lastConnected = IsConnected;
+                while (!_connectionMonitorCts.IsCancellationRequested)
+                {
+                    try
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(15), _connectionMonitorCts.Token);
+
+                        if (Client.UserId == 0) continue;
+
+                        var connected = IsConnected;
+                        if (!connected)
+                        {
+                            Log.Warning("Telegram connection lost — attempting reconnect");
+                            try
+                            {
+                                await Client.ConnectAsync(false);
+                                connected = IsConnected;
+                                if (connected)
+                                    Log.Information("Telegram connection restored");
+                                else
+                                    Log.Warning("Telegram reconnect attempt did not restore the session");
+                            }
+                            catch (Exception ex) when (NetworkExceptionHelper.IsTransientNetworkError(ex))
+                            {
+                                Log.Warning(ex, "Telegram reconnect attempt failed (network)");
+                                connected = false;
+                            }
+                            catch (Exception ex)
+                            {
+                                Log.Warning(ex, "Telegram reconnect attempt failed");
+                                connected = false;
+                            }
+                        }
+
+                        if (connected != lastConnected)
+                        {
+                            lastConnected = connected;
+                            ConnectionStatusChanged?.Invoke(connected);
+                        }
+                    }
+                    catch (OperationCanceledException) { break; }
+                }
+            });
         }
     }
 }

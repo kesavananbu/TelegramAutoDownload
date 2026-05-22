@@ -3,19 +3,36 @@ using dotenv.net;
 using Serilog;
 using System;
 using System.Drawing;
+using System.Threading;
 using System.Windows;
 using WinForms = System.Windows.Forms;
 using TelegramAutoDownload.Models;
 using TelegramAutoDownload.Services;
+using TelegramClient;
 
 namespace TelegramAutoDownload
 {
     public partial class App : System.Windows.Application
     {
         public static WinForms.NotifyIcon? TrayIcon { get; private set; }
+        private static Mutex? _singleInstanceMutex;
 
         protected override void OnStartup(StartupEventArgs e)
         {
+            // Prevent two instances from fighting over session.dat (WTelegram file lock).
+            const string mutexName = "Global\\TelegramAutoDownload_SingleInstance";
+            _singleInstanceMutex = new Mutex(true, mutexName, out bool createdNew);
+            if (!createdNew)
+            {
+                MessageBox.Show(
+                    "Telegram Auto Download is already running.\n\nCheck the system tray or close the other instance first.",
+                    "Already running",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                Shutdown();
+                return;
+            }
+
             // Initialize the logger FIRST so exception handlers can write to it immediately.
             Log.Logger = new LoggerConfiguration()
                 .WriteTo.File(System.IO.Path.Combine(AppPaths.LogsDir, "app-.log"),
@@ -41,7 +58,19 @@ namespace TelegramAutoDownload
 
             TaskScheduler.UnobservedTaskException += (_, ex) =>
             {
-                Log.Error(ex.Exception, "Unobserved Task exception");
+                if (NetworkExceptionHelper.IsBackgroundTelegramConnectionFailure(ex.Exception))
+                {
+                    // WTelegram KeepAlive runs internally; a dropped idle TCP link is expected.
+                    Log.Warning(ex.Exception, "Telegram background connection dropped (will reconnect)");
+                }
+                else if (NetworkExceptionHelper.IsTransientNetworkError(ex.Exception))
+                {
+                    Log.Warning(ex.Exception, "Unobserved background network error");
+                }
+                else
+                {
+                    Log.Error(ex.Exception, "Unobserved Task exception");
+                }
                 ex.SetObserved(); // Prevent process termination
             };
 
@@ -116,6 +145,8 @@ namespace TelegramAutoDownload
             // The index uses a debounced background save; this ensures pending writes are persisted.
             TelegramClient.FileDownloadIndex.Flush();
             TrayIcon?.Dispose();
+            try { _singleInstanceMutex?.ReleaseMutex(); } catch { }
+            _singleInstanceMutex?.Dispose();
             Log.Information("Application shutting down");
             Log.CloseAndFlush();
             base.OnExit(e);

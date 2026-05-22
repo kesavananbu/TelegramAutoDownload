@@ -2,7 +2,7 @@ namespace TelegramAutoDownload
 {
     public static class AppVersion
     {
-        public const string Current = "2.8.0";
+        public const string Current = "2.8.1";
         public const string GitHubOwner = "il90il90";
         public const string GitHubRepo = "TelegramAutoDownload";
     }

@@ -68,6 +68,9 @@ namespace TelegramAutoDownload
             ConfigFile = config;
             Loaded += MainWindow_Loaded;
 
+            TelegramApp.ConnectionStatusChanged += UpdateConnectionDot;
+            UpdateConnectionDot(TelegramApp.IsConnected);
+
             var configParams = config.Read();
             _notification = new Notification(configParams);
             telegram.OnSaved = _notification.OnUpdateResultMessageAsync;
@@ -132,6 +135,16 @@ namespace TelegramAutoDownload
 
             // Show/hide the error blink button whenever a new warning/error is logged
             AppLogAlertService.Instance.Changed += OnLogAlertChanged;
+        }
+
+        private void UpdateConnectionDot(bool connected)
+        {
+            Dispatcher.InvokeAsync(() =>
+            {
+                connectionDot.Fill = connected
+                    ? new SolidColorBrush(Colors.LimeGreen)
+                    : new SolidColorBrush(Colors.Red);
+            });
         }
 
         private void OnLogAlertChanged()

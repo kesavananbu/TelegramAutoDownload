@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.8.1] - 2026-05-22
+
+### Fixed
+
+- **WTelegram KeepAlive network drops** no longer log as `[ERR]` — transient TCP timeouts are downgraded to `[WRN]` and the app auto-reconnects
+- **Single-instance guard** prevents two app copies from locking `session.dat` on startup
+- **Connection status dot** in the footer now reflects live Telegram connection state (green/red)
+- **Background login failures** are logged clearly instead of being swallowed silently
+- **`Client_OnUpdates` handler** wrapped in try/catch so update-processing errors cannot crash the session
+- **`CHAT_ADMIN_REQUIRED`** on member export is logged at Debug level (expected when user is not admin)
+
 ## [2.7.14] - 2026-05-15
 
 ### Note

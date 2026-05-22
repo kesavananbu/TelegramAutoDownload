@@ -1,5 +1,5 @@
 #define AppName "Telegram Auto Download"
-#define AppVersion "2.8.0"
+#define AppVersion "2.8.1"
 #define AppPublisher "TelegramAutoDownload"
 #define AppURL "https://github.com/il90il90/TelegramAutoDownload"
 #define AppExeName "TelegramAutoDownload.exe"
