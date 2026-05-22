@@ -31,7 +31,12 @@ namespace TelegramAutoDownload
                 SetStatus("Connecting…");
 
                 var telegram = await Task.Run(() =>
-                    new TelegramApp(config.AppId, config.ApiHash));
+                    SessionLockHelper.CreateTelegramAppWithRetry(
+                        config.AppId,
+                        config.ApiHash,
+                        status => SetStatus(status)));
+
+                App.RegisterTelegram(telegram);
 
                 // Give WTelegramClient a moment to restore the session
                 await Task.Delay(1500);

@@ -20,6 +20,10 @@ namespace TelegramAutoDownload
         /// <summary>Set before auto-update shutdown so MainWindow skips the close dialog.</summary>
         public static bool IsForceShutdown { get; set; }
 
+        private static TelegramClient.TelegramApp? _telegram;
+
+        public static void RegisterTelegram(TelegramClient.TelegramApp? telegram) => _telegram = telegram;
+
         protected override void OnStartup(StartupEventArgs e)
         {
             // Prevent two instances from fighting over session.dat (WTelegram file lock).
@@ -138,15 +142,20 @@ namespace TelegramAutoDownload
 
         protected override void OnExit(ExitEventArgs e)
         {
+            // Release WTelegram session file handles before another instance can start (e.g. after auto-update).
+            try { _telegram?.Shutdown(); } catch { }
+            _telegram = null;
+
             // Flush the download index before exit so no completed-download records are lost.
-            // The index uses a debounced background save; this ensures pending writes are persisted.
             TelegramClient.FileDownloadIndex.Flush();
             TrayIcon?.Dispose();
-            try { _singleInstanceMutex?.ReleaseMutex(); } catch { }
-            _singleInstanceMutex?.Dispose();
             Log.Information("Application shutting down");
             AppLogService.Shutdown();
             base.OnExit(e);
+
+            // Release the single-instance lock last — only after all file handles are closed.
+            try { _singleInstanceMutex?.ReleaseMutex(); } catch { }
+            _singleInstanceMutex?.Dispose();
         }
 
         private static void ShowCrashDialog(Exception ex)

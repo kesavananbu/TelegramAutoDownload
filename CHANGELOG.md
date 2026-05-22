@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.8.4] - 2026-05-22
+
+### Fixed
+
+- **session.dat locked after update** — WTelegram client is disposed before exit; startup retries up to 40 seconds when the session file is temporarily locked
+- **Single-instance mutex** released only after session handles are closed
+- **Downloads aborted after ~6 seconds** — connection monitor no longer calls `ConnectAsync` while file transfers are in progress
+- **Auto-update batch script** force-kills leftover processes and waits before running the installer
+
 ## [2.8.3] - 2026-05-22
 
 ### Fixed

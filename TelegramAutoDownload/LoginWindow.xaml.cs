@@ -43,7 +43,11 @@ namespace TelegramAutoDownload
                 loadingRing.IsActive = true;
 
                 _telegram = await System.Threading.Tasks.Task.Run(() =>
-                    new TelegramApp(_configParams.AppId, _configParams.ApiHash));
+                    SessionLockHelper.CreateTelegramAppWithRetry(
+                        _configParams.AppId,
+                        _configParams.ApiHash));
+
+                App.RegisterTelegram(_telegram);
 
                 // Give WTelegramClient a moment to restore session if somehow reached
                 await System.Threading.Tasks.Task.Delay(800);
@@ -87,7 +91,11 @@ namespace TelegramAutoDownload
                 btnLogin.IsEnabled = false;
 
                 _telegram ??= await System.Threading.Tasks.Task.Run(() =>
-                    new TelegramApp(_configParams.AppId, _configParams.ApiHash));
+                    SessionLockHelper.CreateTelegramAppWithRetry(
+                        _configParams.AppId,
+                        _configParams.ApiHash));
+
+                App.RegisterTelegram(_telegram);
 
                 var phone = txtPhoneNumber.Text.Trim();
                 if (!phone.StartsWith("+")) phone = "+" + phone;

@@ -169,6 +169,9 @@ namespace TelegramAutoDownload.Services
 :wait
 tasklist /fi ""pid eq {pid}"" | findstr /i ""{pid}"" >nul 2>&1
 if not errorlevel 1 ( timeout /t 1 /nobreak >nul & goto wait )
+timeout /t 2 /nobreak >nul
+taskkill /f /im TelegramAutoDownload.exe >nul 2>&1
+timeout /t 3 /nobreak >nul
 ""{tmpFile}"" /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS
 del ""%~f0""
 ");
@@ -221,7 +224,11 @@ del ""%~f0""
                         CreateNoWindow = true,
                         UseShellExecute = false
                     });
-                    Application.Current.Dispatcher.Invoke(() => Application.Current.Shutdown());
+                    Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        App.IsForceShutdown = true;
+                        Application.Current.Shutdown();
+                    });
                 }
             }
             catch (Exception ex)

@@ -66,6 +66,7 @@ namespace TelegramAutoDownload
 
             TelegramApp = telegram;
             ConfigFile = config;
+            App.RegisterTelegram(telegram);
             Loaded += MainWindow_Loaded;
 
             TelegramApp.ConnectionStatusChanged += UpdateConnectionDot;
@@ -1339,10 +1340,7 @@ namespace TelegramAutoDownload
         protected override void OnClosing(CancelEventArgs e)
         {
             if (App.IsForceShutdown)
-            {
-                try { TelegramApp.Client.Dispose(); } catch { }
                 return;
-            }
 
             // Always cancel the raw close event and show the choice dialog instead
             e.Cancel = true;

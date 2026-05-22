@@ -133,18 +133,24 @@ namespace TelegramClient
         /// </summary>
         public async Task LogoutAsync()
         {
-            _connectionMonitorCts.Cancel();
             try { await Client.Auth_LogOut(); } catch { /* ignore network errors during logout */ }
+            Shutdown();
+            try { System.IO.File.Delete(GetSessionPath()); } catch { }
+        }
 
-            // Dispose client to release file locks on the session file
+        /// <summary>
+        /// Releases WTelegram session file handles. Safe to call multiple times.
+        /// </summary>
+        public void Shutdown()
+        {
+            _connectionMonitorCts.Cancel();
             try { Client.Dispose(); } catch { }
+        }
 
-            // Delete the session file so the next startup triggers re-authentication
-            var sessionPath = System.IO.Path.Combine(
+        private static string GetSessionPath() =>
+            System.IO.Path.Combine(
                 System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData),
                 "TelegramAutoDownload", "session.dat");
-            try { System.IO.File.Delete(sessionPath); } catch { }
-        }
 
         public void UpdateConfig(ConfigParams configParams)
         {
@@ -1622,6 +1628,13 @@ namespace TelegramClient
                         var connected = IsConnected;
                         if (!connected)
                         {
+                            // Reconnecting during an active transfer aborts the download (ConnectAsync resets the client).
+                            if (CancellationRegistry.Count > 0)
+                            {
+                                Log.Debug("Telegram reconnect deferred — {Count} download(s) in progress", CancellationRegistry.Count);
+                                continue;
+                            }
+
                             Log.Warning("Telegram connection lost — attempting reconnect");
                             try
                             {

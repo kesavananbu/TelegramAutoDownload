@@ -1,5 +1,5 @@
 #define AppName "Telegram Auto Download"
-#define AppVersion "2.8.3"
+#define AppVersion "2.8.4"
 #define AppPublisher "TelegramAutoDownload"
 #define AppURL "https://github.com/il90il90/TelegramAutoDownload"
 #define AppExeName "TelegramAutoDownload.exe"
@@ -88,8 +88,8 @@ Filename: "taskkill.exe"; Parameters: "/f /im {#AppExeName}"; Flags: runhidden; 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var ResultCode: Integer;
 begin
-  // Safety net when auto-update could not exit cleanly before the installer started.
   Exec('taskkill.exe', '/f /im {#AppExeName}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Sleep(3000);
   Result := '';
 end;
 
