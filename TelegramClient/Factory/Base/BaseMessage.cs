@@ -108,9 +108,11 @@ namespace TelegramClient.Factory.Base
         /// and protection against reconnect interrupting the transfer.
         /// </summary>
         protected async Task<ResultExecute> DownloadDocumentAsync(
-            Document document, ChatDto chatDto, string fileName, string pluginName)
+            Document document, ChatDto chatDto, string fileName, string pluginName,
+            string? overrideFinalPath = null,
+            bool markDownloadedInIndex = true)
         {
-            var finalPath = PathLocationFolder(chatDto, fileName);
+            var finalPath = overrideFinalPath ?? PathLocationFolder(chatDto, fileName);
             var partPath = GetPartFilePath(finalPath);
             var cancelKey = CancellationRegistry.MakeKey(chatDto.Name, fileName);
 
@@ -139,7 +141,8 @@ namespace TelegramClient.Factory.Base
                 }).ConfigureAwait(false);
 
                 File.Move(partPath, finalPath, overwrite: true);
-                FileDownloadIndex.MarkDownloaded(document.ID);
+                if (markDownloadedInIndex)
+                    FileDownloadIndex.MarkDownloaded(document.ID);
                 OnComplete?.Invoke(chatDto.Name, fileName, true);
                 return new ResultExecute(chatDto.Name)
                 {

@@ -32,5 +32,8 @@ namespace BasePlugins
 
         /// <summary>Relative folder for the Torrent plugin. Tokens: {Platform}, {ChatName}.</summary>
         public string? TorrentDownloadFolderTemplate { get; set; }
+
+        /// <summary>Local path to a .torrent file (e.g. after Telegram attachment download).</summary>
+        public string? LocalTorrentPath { get; set; }
     }
 }

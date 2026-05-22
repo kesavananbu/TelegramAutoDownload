@@ -80,6 +80,24 @@ namespace TelegramAutoDownload.Tests
             plugin.CanHandle(MakeConfig("magnet:?xt=urn:btih:abc123&dn=test")).Should().BeTrue();
         }
 
+        [Fact]
+        public void Torrent_CanHandle_ReturnsTrue_ForLocalTorrentPath()
+        {
+            var temp = Path.Combine(Path.GetTempPath(), "test-" + Guid.NewGuid().ToString("N") + ".torrent");
+            File.WriteAllText(temp, "d8:announce");
+            try
+            {
+                var config = MakeConfig("");
+                config.LocalTorrentPath = temp;
+                var plugin = new TorrentPlugin<object>();
+                plugin.CanHandle(config).Should().BeTrue();
+            }
+            finally
+            {
+                try { File.Delete(temp); } catch { }
+            }
+        }
+
         [Theory]
         [InlineData("https://some-site.com/file.torrent")]
         [InlineData("https://youtu.be/abc")]

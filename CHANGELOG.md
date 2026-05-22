@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.8.7] - 2026-05-22
+
+### Added
+
+- **Torrent plugin downloads real content** — `.torrent` file attachments from Telegram are parsed and downloaded via BitTorrent (MonoTorrent), not just saved as the small `.torrent` file
+- **Magnet links** — progress, cancel, and completion callbacks wired to the downloads UI
+- Shared `TorrentDownloadService` handles both magnet URIs and local `.torrent` files with byte-level progress reporting
+
 ## [2.8.6] - 2026-05-22
 
 ### Fixed

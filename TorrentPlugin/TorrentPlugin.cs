@@ -1,10 +1,6 @@
 using BasePlugins;
-using MonoTorrent;
-using MonoTorrent.Client;
 using System;
 using System.IO;
-using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace TorrentPlugin
@@ -16,7 +12,14 @@ namespace TorrentPlugin
 
         public override bool CanHandle(Config config)
         {
-            return config.Text.StartsWith("magnet:");
+            if (config.Text.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            if (!string.IsNullOrWhiteSpace(config.LocalTorrentPath) &&
+                File.Exists(config.LocalTorrentPath))
+                return true;
+
+            return false;
         }
 
         public override async Task<ResultExecute> ExecuteAsync(Config config)
@@ -30,62 +33,19 @@ namespace TorrentPlugin
             if (!Directory.Exists(outputFolder))
                 Directory.CreateDirectory(outputFolder);
 
-            try
-            {
-                var settingsBuilder = new EngineSettingsBuilder
-                {
-                    CacheDirectory = Path.Combine(outputFolder, ".cache"),
-                };
-                var settings = settingsBuilder.ToSettings();
+            var magnetUri = config.Text.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase)
+                ? config.Text
+                : null;
 
-                using var engine = new ClientEngine(settings);
-
-                var magnetLink = MagnetLink.Parse(config.Text);
-                var torrentManager = await engine.AddAsync(magnetLink, outputFolder);
-
-                await torrentManager.StartAsync();
-
-                // Wait for download to complete or fail (with timeout)
-                using var cts = new CancellationTokenSource(TimeSpan.FromHours(24));
-                while (!cts.Token.IsCancellationRequested)
-                {
-                    await Task.Delay(2000, cts.Token);
-
-                    var state = torrentManager.State;
-                    if (state == TorrentState.Seeding || state == TorrentState.Stopped)
-                        break;
-                    if (state == TorrentState.Error)
-                    {
-                        await torrentManager.StopAsync();
-                        return new ResultExecute(config.ChatName)
-                        {
-                            IsSuccess = false,
-                            ErrorMessage = $"Torrent error: {torrentManager.Error?.Exception?.Message}"
-                        };
-                    }
-                }
-
-                await torrentManager.StopAsync();
-
-                var downloadedName = torrentManager.Torrent?.Name
-                    ?? torrentManager.Files.FirstOrDefault()?.Path
-                    ?? magnetLink.Name
-                    ?? "torrent";
-
-                return new ResultExecute(config.ChatName)
-                {
-                    IsSuccess = true,
-                    FileName = downloadedName
-                };
-            }
-            catch (Exception ex)
-            {
-                return new ResultExecute(config.ChatName)
-                {
-                    IsSuccess = false,
-                    ErrorMessage = ex.Message
-                };
-            }
+            return await TorrentDownloadService.DownloadAsync(
+                config.ChatName,
+                outputFolder,
+                magnetUri,
+                config.LocalTorrentPath,
+                PluginName,
+                OnProgress,
+                OnComplete,
+                config.CancellationToken).ConfigureAwait(false);
         }
     }
 }
