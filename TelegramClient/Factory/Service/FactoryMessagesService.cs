@@ -156,6 +156,13 @@ namespace TelegramClient.Factory.Service
         }
 
         /// <summary>
+        /// Plain text with no URL — not a failure; the message pipeline ran but had nothing to do.
+        /// </summary>
+        public static bool IsBenignNoWorkOutcome(ResultExecute r) =>
+            !r.IsSuccess &&
+            (r.ErrorMessage?.StartsWith("No http/https URL", StringComparison.OrdinalIgnoreCase) ?? false);
+
+        /// <summary>
         /// True when the message may perform network I/O (media, URL plugins, or filter text capture).
         /// Used to avoid spamming logs for plain text that no plugin handles.
         /// </summary>
@@ -179,7 +186,7 @@ namespace TelegramClient.Factory.Service
             var interesting = logLifecycle
                 || (r.IsSuccess && (!string.IsNullOrEmpty(r.FileName) || !string.IsNullOrEmpty(r.FilePath)))
                 || (r.IsSuccess && !string.IsNullOrEmpty(r.ErrorMessage))
-                || !r.IsSuccess;
+                || (!r.IsSuccess && !IsBenignNoWorkOutcome(r));
 
             if (!interesting)
             {

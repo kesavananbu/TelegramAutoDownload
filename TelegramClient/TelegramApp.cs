@@ -374,7 +374,8 @@ namespace TelegramClient
                                         // Dedup skip — remove the UI entry silently, no warning needed
                                         OnSkipped?.Invoke(chat.Name, infoMessage.ID);
                                     }
-                                    else if (!string.IsNullOrEmpty(resultExecute.ErrorMessage))
+                                    else if (!string.IsNullOrEmpty(resultExecute.ErrorMessage)
+                                             && !FactoryMessagesService.IsBenignNoWorkOutcome(resultExecute))
                                     {
                                         if (OnWarnningMessage != null)
                                             await OnWarnningMessage.Invoke(resultMessageEvent);

@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.8.5] - 2026-05-22
+
+### Fixed
+
+- **Plain text messages without URLs** no longer log as `[WRN] Download failed` or trigger the error alert button — expected "nothing to download" cases are silent
+
 ## [2.8.4] - 2026-05-22
 
 ### Fixed
