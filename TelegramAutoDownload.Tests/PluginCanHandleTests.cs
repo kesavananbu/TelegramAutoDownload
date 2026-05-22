@@ -99,6 +99,14 @@ namespace TelegramAutoDownload.Tests
         }
 
         [Theory]
+        [InlineData("Download: magnet:?xt=urn:btih:abc123&dn=test")]
+        public void Torrent_CanHandle_ReturnsTrue_ForEmbeddedMagnetLink(string text)
+        {
+            var plugin = new TorrentPlugin<object>();
+            plugin.CanHandle(MakeConfig(text)).Should().BeTrue();
+        }
+
+        [Theory]
         [InlineData("https://some-site.com/file.torrent")]
         [InlineData("https://youtu.be/abc")]
         [InlineData("just text")]

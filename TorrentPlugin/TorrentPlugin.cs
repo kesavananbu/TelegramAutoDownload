@@ -1,5 +1,4 @@
 using BasePlugins;
-using System;
 using System.IO;
 using System.Threading.Tasks;
 
@@ -12,14 +11,11 @@ namespace TorrentPlugin
 
         public override bool CanHandle(Config config)
         {
-            if (config.Text.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase))
+            if (MagnetLinkHelper.ContainsMagnetLink(config.Text))
                 return true;
 
-            if (!string.IsNullOrWhiteSpace(config.LocalTorrentPath) &&
-                File.Exists(config.LocalTorrentPath))
-                return true;
-
-            return false;
+            return !string.IsNullOrWhiteSpace(config.LocalTorrentPath) &&
+                   File.Exists(config.LocalTorrentPath);
         }
 
         public override async Task<ResultExecute> ExecuteAsync(Config config)
@@ -33,9 +29,7 @@ namespace TorrentPlugin
             if (!Directory.Exists(outputFolder))
                 Directory.CreateDirectory(outputFolder);
 
-            var magnetUri = config.Text.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase)
-                ? config.Text
-                : null;
+            var magnetUri = MagnetLinkHelper.TryExtract(config.Text);
 
             return await TorrentDownloadService.DownloadAsync(
                 config.ChatName,

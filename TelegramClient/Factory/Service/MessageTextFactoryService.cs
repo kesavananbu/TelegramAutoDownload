@@ -98,8 +98,16 @@ namespace TelegramClient.Factory.Service
 
             var pluginRan = false;
             var split = (message.message ?? string.Empty).Split('\n');
-            foreach (var line in split)
+            foreach (var rawLine in split)
             {
+                var line = rawLine.Trim();
+                if (string.IsNullOrEmpty(line))
+                    continue;
+
+                var magnet = MagnetLinkHelper.TryExtract(line);
+                if (magnet != null)
+                    line = magnet;
+
                 // Sort by priority on each line to ensure deterministic ordering
                 var orderedPlugins = _pluginTypes
                     .Select(t => t.MakeGenericType(typeof(Message)))

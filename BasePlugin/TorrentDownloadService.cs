@@ -14,6 +14,9 @@ namespace BasePlugins
     /// </summary>
     public static class TorrentDownloadService
     {
+        private static readonly object EngineLock = new();
+        private static ClientEngine? _sharedEngine;
+
         public static bool IsTorrentFileName(string? fileName) =>
             !string.IsNullOrEmpty(fileName) &&
             fileName.EndsWith(".torrent", StringComparison.OrdinalIgnoreCase);
@@ -36,6 +39,7 @@ namespace BasePlugins
                 return Path.GetFileNameWithoutExtension(torrentFilePath);
             }
 
+            magnetUri = MagnetLinkHelper.TryExtract(magnetUri);
             if (!string.IsNullOrEmpty(magnetUri))
             {
                 try
@@ -63,6 +67,8 @@ namespace BasePlugins
             Action<string, string, bool>? onComplete,
             CancellationToken hostCancellationToken = default)
         {
+            magnetUri = MagnetLinkHelper.TryExtract(magnetUri);
+
             if (string.IsNullOrWhiteSpace(magnetUri) && string.IsNullOrWhiteSpace(torrentFilePath))
             {
                 return new ResultExecute(chatName)
@@ -82,35 +88,43 @@ namespace BasePlugins
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(userToken, hostCancellationToken);
             var token = linkedCts.Token;
 
-            ClientEngine? engine = null;
             TorrentManager? torrentManager = null;
+            long knownTotalBytes = 0;
 
             try
             {
-                onProgress?.Invoke(chatName, displayName, pluginName, 0, 0, 0);
-
-                var settings = new EngineSettingsBuilder
+                if (!string.IsNullOrWhiteSpace(torrentFilePath) && File.Exists(torrentFilePath))
                 {
-                    CacheDirectory = Path.Combine(outputFolder, ".cache"),
-                }.ToSettings();
+                    var torrentMeta = await Torrent.LoadAsync(torrentFilePath).ConfigureAwait(false);
+                    knownTotalBytes = torrentMeta.Size;
+                }
 
-                engine = new ClientEngine(settings);
+                onProgress?.Invoke(chatName, displayName, pluginName, 0, 0, knownTotalBytes);
+
+                var engine = GetSharedEngine();
+                var torrentSettings = new TorrentSettingsBuilder
+                {
+                    CreateContainingDirectory = true,
+                }.ToSettings();
 
                 if (!string.IsNullOrWhiteSpace(torrentFilePath))
                 {
                     var torrent = await Torrent.LoadAsync(torrentFilePath).ConfigureAwait(false);
-                    torrentManager = await engine.AddAsync(torrent, outputFolder).ConfigureAwait(false);
+                    knownTotalBytes = torrent.Size;
+                    torrentManager = await engine.AddAsync(torrent, outputFolder, torrentSettings).ConfigureAwait(false);
                 }
                 else
                 {
                     var magnetLink = MagnetLink.Parse(magnetUri!);
-                    torrentManager = await engine.AddAsync(magnetLink, outputFolder).ConfigureAwait(false);
+                    torrentManager = await engine.AddAsync(magnetLink, outputFolder, torrentSettings).ConfigureAwait(false);
                 }
 
                 await torrentManager.StartAsync().ConfigureAwait(false);
 
-                var lastReportUtc = DateTime.UtcNow;
-                long lastBytes = 0;
+                var startedUtc = DateTime.UtcNow;
+                var lastReportUtc = DateTime.MinValue;
+                double lastPct = -1;
+                long lastBytes = -1;
 
                 while (!token.IsCancellationRequested)
                 {
@@ -132,54 +146,67 @@ namespace BasePlugins
                         };
                     }
 
-                    var totalBytes = torrentManager.Torrent?.Size ?? 0;
-                    var downloadedBytes = torrentManager.Monitor.DataBytesReceived;
-                    if (totalBytes <= 0 && torrentManager.Complete)
-                        totalBytes = downloadedBytes;
+                    if (torrentManager.Torrent?.Size > 0)
+                        knownTotalBytes = torrentManager.Torrent.Size;
+
+                    var totalBytes = knownTotalBytes;
+                    var progress = torrentManager.Progress;
+                    var downloadedBytes = totalBytes > 0
+                        ? (long)Math.Min(totalBytes, progress * totalBytes)
+                        : torrentManager.Monitor.DataBytesReceived;
 
                     var pct = totalBytes > 0
-                        ? Math.Min(99, downloadedBytes * 100.0 / totalBytes)
-                        : (torrentManager.Progress * 100.0);
+                        ? Math.Min(99, progress * 100.0)
+                        : (downloadedBytes > 0 ? 1.0 : 0.0);
 
                     var now = DateTime.UtcNow;
-                    if (now - lastReportUtc >= TimeSpan.FromMilliseconds(500) || downloadedBytes != lastBytes || pct >= 99)
+                    if (now - lastReportUtc >= TimeSpan.FromMilliseconds(500)
+                        || Math.Abs(pct - lastPct) >= 0.1
+                        || downloadedBytes != lastBytes)
                     {
                         onProgress?.Invoke(chatName, displayName, pluginName, pct, downloadedBytes, totalBytes);
                         lastReportUtc = now;
+                        lastPct = pct;
                         lastBytes = downloadedBytes;
                     }
 
                     if (torrentManager.Complete)
                         break;
 
+                    if (progress <= 0
+                        && torrentManager.Monitor.DataBytesReceived == 0
+                        && now - startedUtc > TimeSpan.FromMinutes(10))
+                    {
+                        onComplete?.Invoke(chatName, displayName, false);
+                        return new ResultExecute(chatName)
+                        {
+                            IsSuccess = false,
+                            FileName = displayName,
+                            ErrorMessage = "No peers found after 10 minutes. Check firewall/router or try again later.",
+                        };
+                    }
+
                     await Task.Delay(500, token).ConfigureAwait(false);
                 }
 
                 await torrentManager.StopAsync().ConfigureAwait(false);
+                try { await engine.RemoveAsync(torrentManager).ConfigureAwait(false); } catch { }
 
+                var finalTotal = torrentManager.Torrent?.Size ?? knownTotalBytes;
                 var downloadedPath = ResolveDownloadedPath(torrentManager, outputFolder);
-                onProgress?.Invoke(chatName, displayName, pluginName, 100, torrentManager.Torrent?.Size ?? 0, torrentManager.Torrent?.Size ?? 0);
+                onProgress?.Invoke(chatName, displayName, pluginName, 100, finalTotal, finalTotal);
                 onComplete?.Invoke(chatName, displayName, true);
 
                 return new ResultExecute(chatName)
                 {
                     IsSuccess = true,
                     FileName = displayName,
-                    FilePath = downloadedPath,
+                    FilePath = downloadedPath ?? outputFolder,
                 };
             }
             catch (OperationCanceledException)
             {
-                try
-                {
-                    if (torrentManager != null)
-                        await torrentManager.StopAsync().ConfigureAwait(false);
-                }
-                catch
-                {
-                    // ignore cleanup errors
-                }
-
+                await StopAndRemoveAsync(torrentManager).ConfigureAwait(false);
                 onComplete?.Invoke(chatName, displayName, false);
                 return new ResultExecute(chatName)
                 {
@@ -190,6 +217,7 @@ namespace BasePlugins
             }
             catch (Exception ex)
             {
+                await StopAndRemoveAsync(torrentManager).ConfigureAwait(false);
                 onComplete?.Invoke(chatName, displayName, false);
                 return new ResultExecute(chatName)
                 {
@@ -200,8 +228,50 @@ namespace BasePlugins
             }
             finally
             {
-                engine?.Dispose();
                 CancellationRegistry.Remove(cancelKey);
+            }
+        }
+
+        private static ClientEngine GetSharedEngine()
+        {
+            lock (EngineLock)
+            {
+                if (_sharedEngine != null)
+                    return _sharedEngine;
+
+                var cacheRoot = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "TelegramAutoDownload",
+                    "torrent-engine");
+
+                Directory.CreateDirectory(cacheRoot);
+
+                var settings = new EngineSettingsBuilder
+                {
+                    AllowPortForwarding = true,
+                    CacheDirectory = Path.Combine(cacheRoot, "cache"),
+                }.ToSettings();
+
+                _sharedEngine = new ClientEngine(settings);
+                return _sharedEngine;
+            }
+        }
+
+        private static async Task StopAndRemoveAsync(TorrentManager? torrentManager)
+        {
+            if (torrentManager == null)
+                return;
+
+            try
+            {
+                await torrentManager.StopAsync().ConfigureAwait(false);
+                var engine = _sharedEngine;
+                if (engine != null)
+                    await engine.RemoveAsync(torrentManager).ConfigureAwait(false);
+            }
+            catch
+            {
+                // ignore cleanup errors
             }
         }
 

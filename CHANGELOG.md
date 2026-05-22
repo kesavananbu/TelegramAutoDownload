@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.8.8] - 2026-05-23
+
+### Fixed
+
+- **Torrent downloads stuck at 0%** — enable UPnP/port forwarding (`AllowPortForwarding`) so MonoTorrent can connect to peers; use shared engine and proper multi-file torrent settings
+- Progress now uses MonoTorrent `Progress` (includes hash-check phase), not only raw network bytes
+
+### Added
+
+- **Magnet links** in message text/captions — extracted even when embedded (e.g. `Download: magnet:?xt=...`); enable **TR** per chat
+
 ## [2.8.7] - 2026-05-22
 
 ### Added
