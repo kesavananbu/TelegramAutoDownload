@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.9.2] - 2026-05-23
+
+### Fixed
+
+- **Duplicate download rows** for magnet links and URL text messages — the preview row (🧲/🔗) is renamed in-place when the plugin reports the real torrent/file name
+
 ## [2.9.1] - 2026-05-23
 
 ### Fixed

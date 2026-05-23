@@ -182,20 +182,19 @@ namespace TelegramAutoDownload.Services
                 var item = Downloads.FirstOrDefault(d => d.ChatName == chatName && d.FileName == fileName);
 
                 // If no exact match, look for a queued/downloading item for the same chat
-                // that still carries a generated placeholder name — and rename it to the real name.
+                // that still carries a preview/placeholder name — and rename it to the real name.
                 if (item == null)
                 {
                     item = Downloads.FirstOrDefault(d =>
                         d.ChatName == chatName &&
-                        d.Status == "⬇ Downloading" &&
-                        (d.FileName.StartsWith("file_") ||
-                         d.FileName.StartsWith("video_") ||
-                         d.FileName.StartsWith("audio_") ||
-                         d.FileName.StartsWith("photo_")));
+                        (d.Status == "⬇ Downloading" || d.Status == "⏳ Queued") &&
+                        IsPlaceholderPreviewName(d.FileName));
 
                     if (item != null)
                     {
                         item.FileName = fileName;
+                        if (item.Status == "⏳ Queued")
+                            item.Status = "⬇ Downloading";
                         // Update the CancellationKey now that the real filename is known,
                         // so the watchdog can cancel this download using the correct key.
                         item.CancellationKey = CancellationRegistry.MakeKey(chatName, fileName);
@@ -449,6 +448,18 @@ namespace TelegramAutoDownload.Services
             }
             return totalBytesPerSec > 0 ? FormatSpeed(totalBytesPerSec) : string.Empty;
         }
+
+        /// <summary>
+        /// Preview names from EnqueueDownload before the plugin reports the real file/torrent name.
+        /// </summary>
+        public static bool IsPlaceholderPreviewName(string fileName) =>
+            fileName.StartsWith("file_") ||
+            fileName.StartsWith("video_") ||
+            fileName.StartsWith("audio_") ||
+            fileName.StartsWith("photo_") ||
+            fileName.StartsWith("🧲 ") ||
+            fileName.StartsWith("🔗 ") ||
+            fileName.StartsWith("📝 ");
 
         private static string FormatSpeed(double bytesPerSec)
         {
