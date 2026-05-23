@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.8.9] - 2026-05-23
+
+### Fixed
+
+- **Magnet links** — separate 30-minute timeout for metadata fetch (DHT) vs 10-minute download stall; enable DHT/PEX/local peer discovery and magnet metadata cache
+- **Re-sending .torrent files** — no longer skipped as "already downloaded" when only the small `.torrent` metadata file exists from an older version (checks for actual content in `Torrent/` folder)
+
 ## [2.8.8] - 2026-05-23
 
 ### Fixed

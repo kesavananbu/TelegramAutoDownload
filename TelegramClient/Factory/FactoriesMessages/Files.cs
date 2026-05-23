@@ -32,6 +32,23 @@ namespace TelegramClient.Factory.Factories
             if (!chatDto.Download.Files && !(isTorrentAttachment && torrentPluginEnabled))
                 return new ResultExecute(chatDto.Name);
 
+            if (isTorrentAttachment && torrentPluginEnabled)
+            {
+                if (FileDownloadIndex.IsAlreadyDownloaded(document.ID)
+                    && IsTorrentContentPresent(chatDto))
+                {
+                    return new ResultExecute(chatDto.Name)
+                    {
+                        IsSuccess = true,
+                        FileName = fileName,
+                        ErrorMessage = $"{fileName} torrent content already downloaded (id match)",
+                    };
+                }
+
+                FileDownloadIndex.Remove(document.ID);
+                return await DownloadTorrentAttachmentAsync(document, chatDto, fileName);
+            }
+
             if (FileDownloadIndex.IsAlreadyDownloaded(document.ID))
             {
                 var existingFile = GetPathOfDuplicateFile(fileName, document.size);
@@ -47,10 +64,32 @@ namespace TelegramClient.Factory.Factories
                 return new ResultExecute(chatDto.Name) { IsSuccess = true, FileName = fileName, ErrorMessage = $"{fileName} is exist on {fileExist}" };
             }
 
-            if (isTorrentAttachment && torrentPluginEnabled)
-                return await DownloadTorrentAttachmentAsync(document, chatDto, fileName);
-
             return await DownloadDocumentAsync(document, chatDto, fileName, TypeMessage.ToString());
+        }
+
+        private bool IsTorrentContentPresent(ChatDto chatDto)
+        {
+            var outputFolder = PluginFolderPathHelper.CombineUnderDownloadRoot(
+                PathFolderToSaveFiles,
+                string.IsNullOrWhiteSpace(chatDto.TorrentDownloadFolderTemplate)
+                    ? null
+                    : chatDto.TorrentDownloadFolderTemplate,
+                "Torrent",
+                chatDto.Name,
+                "{Platform}/{ChatName}");
+
+            if (!Directory.Exists(outputFolder))
+                return false;
+
+            foreach (var file in Directory.EnumerateFiles(outputFolder, "*", SearchOption.AllDirectories))
+            {
+                if (file.Contains($"{Path.DirectorySeparatorChar}.cache{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (new FileInfo(file).Length > 5 * 1024 * 1024)
+                    return true;
+            }
+
+            return false;
         }
 
         private static bool IsTorrentPluginEnabled(ChatDto chatDto) =>

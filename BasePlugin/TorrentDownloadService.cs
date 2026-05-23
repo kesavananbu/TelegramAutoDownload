@@ -105,6 +105,8 @@ namespace BasePlugins
                 var torrentSettings = new TorrentSettingsBuilder
                 {
                     CreateContainingDirectory = true,
+                    AllowDht = true,
+                    AllowPeerExchange = true,
                 }.ToSettings();
 
                 if (!string.IsNullOrWhiteSpace(torrentFilePath))
@@ -121,10 +123,13 @@ namespace BasePlugins
 
                 await torrentManager.StartAsync().ConfigureAwait(false);
 
+                var isMagnetDownload = string.IsNullOrWhiteSpace(torrentFilePath);
                 var startedUtc = DateTime.UtcNow;
+                var downloadPhaseStartedUtc = startedUtc;
                 var lastReportUtc = DateTime.MinValue;
                 double lastPct = -1;
                 long lastBytes = -1;
+                var hadMetadata = torrentManager.HasMetadata;
 
                 while (!token.IsCancellationRequested)
                 {
@@ -144,6 +149,12 @@ namespace BasePlugins
                             FileName = displayName,
                             ErrorMessage = $"Torrent error: {torrentManager.Error?.Exception?.Message ?? "unknown"}",
                         };
+                    }
+
+                    if (!hadMetadata && torrentManager.HasMetadata)
+                    {
+                        hadMetadata = true;
+                        downloadPhaseStartedUtc = DateTime.UtcNow;
                     }
 
                     if (torrentManager.Torrent?.Size > 0)
@@ -173,9 +184,22 @@ namespace BasePlugins
                     if (torrentManager.Complete)
                         break;
 
-                    if (progress <= 0
+                    if (isMagnetDownload && !torrentManager.HasMetadata)
+                    {
+                        if (now - startedUtc > TimeSpan.FromMinutes(30))
+                        {
+                            onComplete?.Invoke(chatName, displayName, false);
+                            return new ResultExecute(chatName)
+                            {
+                                IsSuccess = false,
+                                FileName = displayName,
+                                ErrorMessage = "Could not fetch magnet metadata after 30 minutes. The swarm may be dead or blocked by firewall/DHT.",
+                            };
+                        }
+                    }
+                    else if (progress <= 0
                         && torrentManager.Monitor.DataBytesReceived == 0
-                        && now - startedUtc > TimeSpan.FromMinutes(10))
+                        && now - downloadPhaseStartedUtc > TimeSpan.FromMinutes(10))
                     {
                         onComplete?.Invoke(chatName, displayName, false);
                         return new ResultExecute(chatName)
@@ -249,6 +273,9 @@ namespace BasePlugins
                 var settings = new EngineSettingsBuilder
                 {
                     AllowPortForwarding = true,
+                    AllowLocalPeerDiscovery = true,
+                    AutoSaveLoadMagnetLinkMetadata = true,
+                    AutoSaveLoadDhtCache = true,
                     CacheDirectory = Path.Combine(cacheRoot, "cache"),
                 }.ToSettings();
 
