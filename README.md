@@ -1,6 +1,6 @@
 # Telegram Auto Download
 
-> **v2.3.0** — A WPF desktop application for Windows that monitors Telegram channels, groups, and DMs and automatically downloads media, YouTube/social-media links, and torrents.
+> **v2.9.0** — A WPF desktop application for Windows that monitors Telegram channels, groups, and DMs and automatically downloads media, YouTube/social-media links, and torrents.
 
 ---
 
@@ -13,6 +13,8 @@
 - **Configurable minimum file size** per chat (skip files below N MB)
 - **Parallel downloads** — configurable thread count (1–10, default 3)
 - **Retry on failure** — a Retry button (↺) appears next to failed or timed-out downloads
+- **Auto clean** — optional: remove completed rows from the Downloads panel after a few seconds (unchecked = keep history + Open button)
+- **Open from UI** — 📂 opens the finished file or torrent folder directly from the Downloads list
 
 ### Per-chat settings
 - **Per-chat provider toggles** — enable/disable YouTube, SocialMedia, Torrent, or Direct per chat
@@ -33,6 +35,7 @@
 ### Statistics & monitoring
 - **Session stats** in the header strip — files downloaded and bytes transferred since last launch
 - **All-time persistent stats** — total file count and bytes saved across all sessions (stored in `stats.json`)
+- **Disk space bar** — free space on the download drive, total folder size and file count; turns orange/red when space is low
 - **Real-time progress** — speed, ETA, and percentage for every active download
 - **Total speed badge** — combined download speed of all active downloads
 
@@ -52,7 +55,7 @@ Plugins are resolved in priority order; the first successful plugin stops the ch
 |---|---|---|
 | **SocialMedia** | any `http(s)://` URL (Instagram, TikTok, Twitter/X, Reddit, Facebook, …) | yt-dlp, per-chat quality |
 | **YouTube** | `https://youtu.be/` or `https://www.youtube.com/` | yt-dlp, per-chat quality |
-| **Torrent** | `magnet:` links | MonoTorrent |
+| **Torrent** | `.torrent` attachments and `magnet:` links in text | MonoTorrent (BitTorrent swarm) |
 | **Direct** | Telegram file attachments | native Telegram API |
 
 ---

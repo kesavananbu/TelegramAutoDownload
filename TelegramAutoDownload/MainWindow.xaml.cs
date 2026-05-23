@@ -74,7 +74,10 @@ namespace TelegramAutoDownload
 
             var configParams = config.Read();
             _notification = new Notification(configParams);
-            telegram.OnSaved = _notification.OnUpdateResultMessageAsync;
+            DownloadProgressService.Instance.AutoCleanCompletedDownloads = configParams.AutoCleanDownloads;
+            chkAutoCleanDownloads.IsChecked = configParams.AutoCleanDownloads;
+
+            WireOnSavedHandler();
             telegram.OnWarnningMessage = async eventMsg =>
             {
                 // Propagate error message to the download row so the UI shows it as a tooltip
@@ -133,6 +136,13 @@ namespace TelegramAutoDownload
 
             // Bootstrap StatisticsService (singleton) and refresh all-time counters whenever they change
             StatisticsService.Instance.Changed += UpdateStatsStrip;
+
+            DiskSpaceService.Instance.Changed += UpdateDiskSpaceStrip;
+            DownloadProgressService.Instance.DownloadCompleted += (_, _, _, _) =>
+            {
+                var path = ConfigFile.Read().PathSaveFile;
+                _ = DiskSpaceService.Instance.RefreshAsync(path);
+            };
 
             // Show/hide the error blink button whenever a new warning/error is logged
             AppLogAlertService.Instance.Changed += OnLogAlertChanged;
@@ -410,7 +420,7 @@ namespace TelegramAutoDownload
 
                 // Re-wire notification service with potentially new bot credentials
                 _notification = new Notification(config);
-                TelegramApp.OnSaved = _notification.OnUpdateResultMessageAsync;
+                WireOnSavedHandler();
                 TelegramApp.OnWarnningMessage = _notification.OnWarnningMessageAsync;
             }
         }
@@ -441,6 +451,7 @@ namespace TelegramAutoDownload
             tbFolderPath.Text = path;
             btnOpenFolder.IsEnabled = true;
             btnOpenFolder.ToolTip = path;
+            DiskSpaceService.Instance.StartMonitoring(path);
         }
 
         private void ThreadsSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -494,12 +505,55 @@ namespace TelegramAutoDownload
             });
         }
 
-        private static string FormatBytes(long bytes)
+        private static string FormatBytes(long bytes) => DiskSpaceService.FormatBytes(bytes);
+
+        private void UpdateDiskSpaceStrip()
         {
-            if (bytes >= 1_073_741_824) return $"{bytes / 1_073_741_824.0:F1} GB";
-            if (bytes >= 1_048_576) return $"{bytes / 1_048_576.0:F1} MB";
-            if (bytes >= 1024) return $"{bytes / 1024.0:F0} KB";
-            return $"{bytes} B";
+            Dispatcher.InvokeAsync(() =>
+            {
+                var info = DiskSpaceService.Instance.LastInfo;
+                if (info == null)
+                {
+                    tbDiskInfo.Text = "—";
+                    tbFolderDiskInfo.Text = "—";
+                    return;
+                }
+
+                if (!string.IsNullOrEmpty(info.ErrorMessage) && info.DriveTotalBytes == 0 && !info.IsFolderScanComplete)
+                {
+                    tbDiskInfo.Text = info.ErrorMessage;
+                    tbFolderDiskInfo.Text = "—";
+                    diskSpaceStrip.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xFF, 0xEB, 0xEE));
+                    return;
+                }
+
+                if (info.DriveTotalBytes > 0)
+                {
+                    tbDiskInfo.Text =
+                        $"{info.DriveName} — {FormatBytes(info.DriveFreeBytes)} free of {FormatBytes(info.DriveTotalBytes)} ({info.DriveFreePercent:F0}%)";
+                }
+                else
+                {
+                    tbDiskInfo.Text = $"{info.DriveName} — {FormatBytes(info.DriveFreeBytes)} free";
+                }
+
+                tbFolderDiskInfo.Text = info.IsFolderScanComplete
+                    ? $"{FormatBytes(info.FolderBytes)} ({info.FolderFileCount:N0} files)"
+                    : "Calculating…";
+
+                var freeColor = info.DriveFreeBytes < 1_073_741_824
+                    ? System.Windows.Media.Color.FromRgb(0xC6, 0x28, 0x28)
+                    : info.DriveFreeBytes < 5L * 1024 * 1024 * 1024
+                        ? System.Windows.Media.Color.FromRgb(0xE6, 0x51, 0x00)
+                        : System.Windows.Media.Color.FromRgb(0x2E, 0x7D, 0x32);
+                tbDiskInfo.Foreground = new SolidColorBrush(freeColor);
+
+                diskSpaceStrip.Background = info.DriveFreeBytes < 1_073_741_824
+                    ? new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xFF, 0xEB, 0xEE))
+                    : info.DriveFreeBytes < 5L * 1024 * 1024 * 1024
+                        ? new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xFF, 0xF3, 0xE0))
+                        : new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xE8, 0xF5, 0xE9));
+            });
         }
 
         private void SearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -688,6 +742,57 @@ namespace TelegramAutoDownload
         private void CancelAllDownloads_Click(object sender, RoutedEventArgs e)
         {
             DownloadProgressService.Instance.CancelAllDownloads();
+        }
+
+        private void AutoCleanDownloads_Changed(object sender, RoutedEventArgs e)
+        {
+            if (!IsLoaded) return;
+            var enabled = chkAutoCleanDownloads.IsChecked == true;
+            DownloadProgressService.Instance.AutoCleanCompletedDownloads = enabled;
+            var config = ConfigFile.Read();
+            config.AutoCleanDownloads = enabled;
+            ConfigFile.Save(config);
+        }
+
+        private void OpenDownload_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button btn || btn.Tag is not DownloadItem item) return;
+            if (string.IsNullOrWhiteSpace(item.FilePath)) return;
+
+            try
+            {
+                if (File.Exists(item.FilePath))
+                {
+                    Process.Start(new ProcessStartInfo(item.FilePath) { UseShellExecute = true });
+                    return;
+                }
+
+                if (Directory.Exists(item.FilePath))
+                    Process.Start(new ProcessStartInfo(item.FilePath) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Could not open file: {ex.Message}", "Open file",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        private void WireOnSavedHandler()
+        {
+            TelegramApp.OnSaved = async eventMsg =>
+            {
+                var r = eventMsg.ResultExecute;
+                var chat = eventMsg.Chat;
+                if (r.IsSuccess && !string.IsNullOrWhiteSpace(r.FilePath))
+                {
+                    var lookupName = !string.IsNullOrEmpty(r.NotificationKey) ? r.NotificationKey : r.FileName;
+                    if (!string.IsNullOrEmpty(lookupName))
+                        DownloadProgressService.Instance.SetDownloadPath(chat.Name, lookupName, r.FilePath);
+                    if (!string.IsNullOrEmpty(r.FileName) && r.FileName != lookupName)
+                        DownloadProgressService.Instance.SetDownloadPath(chat.Name, r.FileName, r.FilePath);
+                }
+                return await _notification.OnUpdateResultMessageAsync(eventMsg);
+            };
         }
 
         // Default emoji set shown before group reactions are loaded from Telegram

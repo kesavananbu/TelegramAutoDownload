@@ -158,7 +158,7 @@
                     </StackPanel>
                 </DockPanel>
                 <!-- Session statistics strip -->
-                <Border Background="#E3F2FD" CornerRadius="4" Padding="10,3">
+                <Border Background="#E3F2FD" CornerRadius="4" Padding="10,3" Margin="0,0,0,4">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="📊 This session: " Foreground="#1565C0" FontSize="11"/>
                         <TextBlock x:Name="tbStatsFiles" Text="0 files" FontWeight="SemiBold" Foreground="#1565C0" FontSize="11" Margin="0,0,12,0"/>
@@ -170,6 +170,16 @@
                         <TextBlock x:Name="tbAllTimeFiles" Text="0 files" FontWeight="SemiBold" Foreground="#555" FontSize="11" Margin="0,0,8,0"/>
                         <TextBlock Text="|" Foreground="#BDBDBD" FontSize="11" Margin="0,0,8,0"/>
                         <TextBlock x:Name="tbAllTimeBytes" Text="0 B" FontWeight="SemiBold" Foreground="#555" FontSize="11"/>
+                    </StackPanel>
+                </Border>
+                <!-- Disk space strip -->
+                <Border x:Name="diskSpaceStrip" Background="#E8F5E9" CornerRadius="4" Padding="10,3">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="💾 Drive: " Foreground="#2E7D32" FontSize="11"/>
+                        <TextBlock x:Name="tbDiskInfo" Text="—" FontWeight="SemiBold" Foreground="#2E7D32" FontSize="11" Margin="0,0,16,0"/>
+                        <TextBlock Text="|" Foreground="#A5D6A7" FontSize="11" Margin="0,0,16,0"/>
+                        <TextBlock Text="📂 Download folder: " Foreground="#33691E" FontSize="11"/>
+                        <TextBlock x:Name="tbFolderDiskInfo" Text="—" FontWeight="SemiBold" Foreground="#33691E" FontSize="11"/>
                     </StackPanel>
                 </Border>
             </StackPanel>
@@ -488,14 +498,19 @@
                                 </StackPanel>
                             </Border>
                         </StackPanel>
-                        <!-- Cancel All button — right-aligned in the header bar -->
-                        <Button x:Name="btnCancelAll" Content="✕ Cancel All"
-                                HorizontalAlignment="Right" VerticalAlignment="Center"
-                                Height="22" Padding="8,0" FontSize="11"
-                                Foreground="#F44336" Background="Transparent"
-                                BorderBrush="#F44336" BorderThickness="1"
-                                Cursor="Hand" ToolTip="Cancel all active downloads"
-                                Click="CancelAllDownloads_Click"/>
+                        <!-- Auto clean + Cancel All — right-aligned in the header bar -->
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                            <CheckBox x:Name="chkAutoCleanDownloads" Content="Auto clean"
+                                      IsChecked="True" VerticalAlignment="Center" Margin="0,0,12,0"
+                                      ToolTip="Remove completed downloads from the list after a few seconds"
+                                      Checked="AutoCleanDownloads_Changed" Unchecked="AutoCleanDownloads_Changed"/>
+                            <Button x:Name="btnCancelAll" Content="✕ Cancel All"
+                                    Height="22" Padding="8,0" FontSize="11"
+                                    Foreground="#F44336" Background="Transparent"
+                                    BorderBrush="#F44336" BorderThickness="1"
+                                    Cursor="Hand" ToolTip="Cancel all active downloads"
+                                    Click="CancelAllDownloads_Click"/>
+                        </StackPanel>
                     </DockPanel>
 
                     <DataGrid x:Name="dgDownloads" AutoGenerateColumns="False"
@@ -562,6 +577,31 @@
                                                 </Style>
                                             </TextBlock.Style>
                                         </TextBlock>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <!-- Open file/folder — visible when download finished and path is known -->
+                            <DataGridTemplateColumn Header="" Width="50">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Content="📂" Width="34" Height="22" FontSize="13"
+                                                Tag="{Binding}"
+                                                Click="OpenDownload_Click"
+                                                Foreground="#4CAF50" Background="Transparent"
+                                                BorderBrush="#4CAF50" BorderThickness="1"
+                                                Cursor="Hand" ToolTip="Open downloaded file">
+                                            <Button.Style>
+                                                <Style TargetType="Button">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding CanOpenFile}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>

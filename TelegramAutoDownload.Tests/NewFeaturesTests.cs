@@ -13,6 +13,35 @@ using Xunit;
 namespace TelegramAutoDownload.Tests
 {
     // ===========================================================================
+    // 1b. DownloadItem.CanOpenFile / FilePath
+    // ===========================================================================
+
+    public class DownloadItemOpenTests
+    {
+        [Fact]
+        public void CanOpenFile_WhenDoneWithExistingPath_ReturnsTrue()
+        {
+            var path = Path.Combine(Path.GetTempPath(), "tad-open-test-" + Guid.NewGuid().ToString("N") + ".txt");
+            File.WriteAllText(path, "x");
+            try
+            {
+                var item = new DownloadItem { Status = "✔ Done", FilePath = path };
+                item.CanOpenFile.Should().BeTrue();
+            }
+            finally
+            {
+                try { File.Delete(path); } catch { }
+            }
+        }
+
+        [Fact]
+        public void CanOpenFile_WhenDoneWithoutPath_ReturnsFalse()
+        {
+            new DownloadItem { Status = "✔ Done" }.CanOpenFile.Should().BeFalse();
+        }
+    }
+
+    // ===========================================================================
     // 1. DownloadItem.CanRetry / RetryAsync property
     // ===========================================================================
 

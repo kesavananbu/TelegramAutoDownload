@@ -22,6 +22,9 @@ namespace TelegramAutoDownload.Models
         public bool NotifyOnProgress { get; set; } = true;
         public bool NotifyOnComplete { get; set; } = true;
         public bool NotifyOnError { get; set; } = true;
+
+        /// <summary>When true, completed downloads are removed from the UI list after a few seconds.</summary>
+        public bool AutoCleanDownloads { get; set; } = true;
         public List<ChatDto> Chats { get; set; } = [];
         public string PathSaveFile { get; set; }
 

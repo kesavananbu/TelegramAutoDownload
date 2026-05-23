@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.9.0] - 2026-05-23
+
+### Added
+
+- **Disk space bar** in the header — free space on the download drive, download folder size and file count; low-space warning colors
+- **Auto clean** checkbox in Downloads panel — keep completed rows when unchecked
+- **Open file** button (📂) on completed downloads — launch file or folder from the UI
+
+### Fixed
+
+- Magnet link metadata timeout (30 min DHT fetch) and improved peer discovery settings (from 2.8.9)
+
 ## [2.8.9] - 2026-05-23
 
 ### Fixed

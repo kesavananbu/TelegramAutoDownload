@@ -23,6 +23,9 @@ namespace TelegramAutoDownload.Services
         public int TotalFilesDownloaded => _totalFilesDownloaded;
         public long TotalBytesDownloaded => _totalBytesDownloaded;
 
+        /// <summary>When true, successful downloads are removed from the list after a few seconds.</summary>
+        public bool AutoCleanCompletedDownloads { get; set; } = true;
+
         // How long a download can go without any progress before the UI watchdog fires.
         // The primary guard is the inactivity CTS inside MakeProgress (3 min).
         // This watchdog is a secondary safety net for downloads whose CancellationKey
@@ -251,7 +254,7 @@ namespace TelegramAutoDownload.Services
             });
         }
 
-        public void CompleteDownload(string chatName, string fileName, bool success, string? errorMessage = null)
+        public void CompleteDownload(string chatName, string fileName, bool success, string? errorMessage = null, string? filePath = null)
         {
             Application.Current?.Dispatcher.InvokeAsync(() =>
             {
@@ -259,6 +262,8 @@ namespace TelegramAutoDownload.Services
                 if (item == null) return;
 
                 item.Status = success ? "✔ Done" : "✖ Error";
+                if (!string.IsNullOrWhiteSpace(filePath))
+                    item.FilePath = filePath;
                 if (!success && !string.IsNullOrWhiteSpace(errorMessage))
                     item.ErrorMessage = errorMessage;
                 item.Progress = success ? 100 : item.Progress;
@@ -281,11 +286,28 @@ namespace TelegramAutoDownload.Services
                     : CancellationRegistry.MakeKey(chatName, fileName);
                 CancellationRegistry.Remove(cleanupKey);
 
-                // Auto-remove after 4 seconds
-                Task.Delay(4000).ContinueWith(_ =>
-                    Application.Current?.Dispatcher.InvokeAsync(() => Downloads.Remove(item)));
+                if (ShouldAutoRemoveCompletedItem(item))
+                {
+                    Task.Delay(4000).ContinueWith(_ =>
+                        Application.Current?.Dispatcher.InvokeAsync(() => Downloads.Remove(item)));
+                }
             });
         }
+
+        /// <summary>Sets the on-disk path for a finished download row (matched by chat + file name).</summary>
+        public void SetDownloadPath(string chatName, string fileName, string filePath)
+        {
+            if (string.IsNullOrWhiteSpace(filePath)) return;
+            Application.Current?.Dispatcher.InvokeAsync(() =>
+            {
+                var item = Downloads.FirstOrDefault(d => d.ChatName == chatName && d.FileName == fileName);
+                if (item != null)
+                    item.FilePath = filePath;
+            });
+        }
+
+        private bool ShouldAutoRemoveCompletedItem(DownloadItem item) =>
+            item.Status != "✔ Done" || AutoCleanCompletedDownloads;
 
         /// <summary>
         /// Sets the error message on a failed download item so the UI can show it as a tooltip.

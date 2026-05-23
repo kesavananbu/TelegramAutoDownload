@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.IO;
 
 namespace TelegramAutoDownload.Models
 {
@@ -13,6 +14,7 @@ namespace TelegramAutoDownload.Models
         private string _sizeText = "";
         private long _totalBytes;
         private long _bytesDownloaded;
+        private string _filePath = string.Empty;
 
         public string FileName { get; set; } = string.Empty;
         public string ChatName { get; set; } = string.Empty;
@@ -23,6 +25,24 @@ namespace TelegramAutoDownload.Models
 
         // Key used to cancel this download via CancellationRegistry
         public string CancellationKey { get; set; } = string.Empty;
+
+        /// <summary>Local path to the downloaded file or folder (set on success).</summary>
+        public string FilePath
+        {
+            get => _filePath;
+            set
+            {
+                _filePath = value ?? string.Empty;
+                OnPropertyChanged(nameof(FilePath));
+                OnPropertyChanged(nameof(CanOpenFile));
+            }
+        }
+
+        /// <summary>True when download succeeded and the path exists on disk.</summary>
+        public bool CanOpenFile =>
+            Status == "✔ Done" &&
+            !string.IsNullOrEmpty(FilePath) &&
+            (File.Exists(FilePath) || Directory.Exists(FilePath));
 
         private string _errorMessage = string.Empty;
 
@@ -62,6 +82,7 @@ namespace TelegramAutoDownload.Models
                 OnPropertyChanged(nameof(Status));
                 OnPropertyChanged(nameof(SortOrder));
                 OnPropertyChanged(nameof(CanRetry));
+                OnPropertyChanged(nameof(CanOpenFile));
             }
         }
 
