@@ -245,6 +245,8 @@ namespace TelegramClient
                     // Declared here so the Task.Run lambda below can capture it via closure.
                     // Non-null when a text-only message matches a Filter regex pattern.
                     string? capturedTextPreview = null;
+                    // Non-null when a text-only message contains a magnet link or http URL for plugins.
+                    string? textPluginPreview = null;
 
                     // Track watermark so catch-up doesn't re-download this message
                     if (updateNewMessage.message is Message liveMsg)
@@ -260,11 +262,18 @@ namespace TelegramClient
                         var previewName = GetPreviewFileName(liveMsg);
                         if (previewName != null)
                             OnEnqueued?.Invoke(chat.Name, liveMsg.ID, previewName);
+                        else
+                        {
+                            textPluginPreview = GetTextPluginQueuePreview(liveMsg);
+                            if (textPluginPreview != null)
+                                OnEnqueued?.Invoke(chat.Name, liveMsg.ID, textPluginPreview);
+                        }
 
                         // Filter regex also applies to message text: if a text-only message
                         // (no downloadable media) matches any pattern, it is captured and
                         // saved as a .txt file with the End Icon reaction.
                         if (previewName == null
+                            && textPluginPreview == null
                             && !string.IsNullOrEmpty(liveMsg.message)
                             && chat.IgnoreFileByRegex.Count > 0)
                         {
@@ -319,10 +328,11 @@ namespace TelegramClient
                                 catch { /* history write must never break downloads */ }
                             }
 
-                            // Something is queued when the message has downloadable media OR when its
-                            // text matched a Filter regex pattern and will be captured as a .txt file.
+                            // Something is queued when the message has downloadable media, a plugin URL/magnet,
+                            // or text matched a Filter regex pattern and will be captured as a .txt file.
                             var hasQueuedItem = GetPreviewFileName(infoMessage) != null
-                                             || capturedTextPreview != null;
+                                             || capturedTextPreview != null
+                                             || textPluginPreview != null;
                             if (hasQueuedItem)
                                 OnStarted?.Invoke(chat.Name, infoMessage.ID);
 
@@ -508,13 +518,10 @@ namespace TelegramClient
                         .Where(m => m.media != null && IsMessageTypeEnabled(m, chatDto))
                         .ToList();
 
-                    // Text messages that contain URLs — handled by plugins (YouTube, SocialMedia, Torrent, etc.)
-                    // These are processed silently without a UI queue entry because we can't know
-                    // upfront whether any plugin will actually handle the URL.
+                    // Text messages with http URLs or magnet links — handled by plugins (YouTube, SocialMedia, Torrent, etc.)
                     var urlMessages = rawMessages
                         .Where(m => !mediaMessages.Contains(m) &&
-                                    !string.IsNullOrEmpty(m.message) &&
-                                    m.message.Contains("http", StringComparison.OrdinalIgnoreCase))
+                                    GetTextPluginQueuePreview(m) != null)
                         .ToList();
 
                     // Text-only messages that match a Filter regex pattern → save as .txt capture file.
@@ -540,6 +547,12 @@ namespace TelegramClient
                     {
                         var snippet = msg.message!.Length > 45 ? msg.message[..45] + "…" : msg.message;
                         OnEnqueued?.Invoke(chatDto.Name, msg.ID, $"📝 {snippet}");
+                    }
+                    foreach (var msg in urlMessages)
+                    {
+                        var preview = GetTextPluginQueuePreview(msg);
+                        if (preview != null)
+                            OnEnqueued?.Invoke(chatDto.Name, msg.ID, preview);
                     }
 
                     var sem = _semaphore; // Capture before lambda — see Client_OnUpdates for explanation
@@ -572,12 +585,13 @@ namespace TelegramClient
                         finally { sem.Release(); }
                     }));
 
-                    // Process URL messages silently — no UI queue entry, notification only on success
+                    // Process URL/magnet plugin messages with UI lifecycle (Start Icon is not sent during sync)
                     var urlTasks = urlMessages.Select(msg => Task.Run(async () =>
                     {
                         await sem.WaitAsync();
                         try
                         {
+                            OnStarted?.Invoke(chatDto.Name, msg.ID);
                             var result = await factoryService.ExecuteDirectAsync(msg, chatDto);
                             if (result.IsSuccess && string.IsNullOrEmpty(result.ErrorMessage) && OnSaved != null)
                             {
@@ -616,7 +630,7 @@ namespace TelegramClient
                     }));
 
                     await Task.WhenAll(mediaTasks.Concat(urlTasks).Concat(textCaptureTasks));
-                    totalQueued += mediaMessages.Count + textCaptureMessages.Count;
+                    totalQueued += mediaMessages.Count + textCaptureMessages.Count + urlMessages.Count;
                     onStatus?.Invoke($"Syncing {chatDto.Name}: {totalQueued} files queued…");
 
                     // Stop when the API returns fewer items than requested (beginning of chat).
@@ -777,7 +791,7 @@ namespace TelegramClient
                 await _semaphore.WaitAsync().ConfigureAwait(false);
                 try
                 {
-                    var preview = GetPreviewFileName(msg);
+                    var preview = GetPreviewFileName(msg) ?? GetTextPluginQueuePreview(msg);
                     if (preview != null)
                         OnEnqueued?.Invoke(chatDto.Name, msg.ID, preview);
 
@@ -1095,9 +1109,9 @@ namespace TelegramClient
         public static bool IsDownloadTypeEnabledForMessage(Message msg, ChatDto chatDto) =>
             IsMessageTypeEnabled(msg, chatDto);
 
-        /// <summary>Short label when the message has native file/photo media (for browse UI).</summary>
+        /// <summary>Short label for queue/browse UI (native media, magnet link, or http URL).</summary>
         public static string? GetDownloadPreviewLabel(Message msg) =>
-            GetPreviewFileName(msg);
+            GetPreviewFileName(msg) ?? GetTextPluginQueuePreview(msg);
 
         /// <summary>
         /// Whether the user can queue this message from the browse window (ignores Selected / download toggles).
@@ -1115,8 +1129,7 @@ namespace TelegramClient
         {
             if (GetPreviewFileName(msg) != null && IsMessageTypeEnabled(msg, chat))
                 return true;
-            if (!string.IsNullOrEmpty(msg.message) &&
-                msg.message.Contains("http", StringComparison.OrdinalIgnoreCase))
+            if (GetTextPluginQueuePreview(msg) != null)
                 return true;
             if (msg.media == null && chat.IgnoreFileByRegex.Count > 0 && !string.IsNullOrEmpty(msg.message) &&
                 chat.IgnoreFileByRegex.Any(p =>
@@ -1159,6 +1172,42 @@ namespace TelegramClient
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Preview label for text-only messages handled by URL/Torrent plugins.
+        /// Returns null when the message has native media or no plugin-worthy text.
+        /// </summary>
+        public static string? GetTextPluginQueuePreview(Message msg)
+        {
+            if (msg.media != null)
+                return null;
+
+            var text = msg.message;
+            if (string.IsNullOrWhiteSpace(text))
+                return null;
+
+            var magnet = MagnetLinkHelper.TryExtract(text);
+            if (magnet != null)
+            {
+                var label = magnet.Length > 45 ? magnet[..45] + "…" : magnet;
+                return $"🧲 {label}";
+            }
+
+            if (!text.Contains("http", StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            foreach (var rawLine in text.Split('\n'))
+            {
+                var line = rawLine.Trim();
+                if (!line.Contains("http", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var snippet = line.Length > 45 ? line[..45] + "…" : line;
+                return $"🔗 {snippet}";
+            }
+
+            return null;
         }
 
         /// <summary>

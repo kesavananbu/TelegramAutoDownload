@@ -516,9 +516,19 @@ namespace TelegramAutoDownload.Tests
         [InlineData("https://x.com/user/status/999 great video")]
         public void UrlMessage_ContainsHttp_IsDetectedAsUrl(string text)
         {
-            bool hasUrl = !string.IsNullOrEmpty(text) &&
-                          text.Contains("http", StringComparison.OrdinalIgnoreCase);
-            hasUrl.Should().BeTrue($"'{text}' should be detected as a URL message for plugin processing");
+            var msg = new Message { message = text };
+            TelegramApp.GetTextPluginQueuePreview(msg).Should().NotBeNull($"'{text}' should queue for URL plugins");
+        }
+
+        [Theory]
+        [InlineData("magnet:?xt=urn:btih:abc123&dn=test")]
+        [InlineData("Download: magnet:?xt=urn:btih:abc123&dn=test")]
+        public void MagnetMessage_IsDetectedForPluginQueue(string text)
+        {
+            var msg = new Message { message = text };
+            var preview = TelegramApp.GetTextPluginQueuePreview(msg);
+            preview.Should().NotBeNull();
+            preview.Should().StartWith("🧲 ");
         }
 
         [Theory]
@@ -527,9 +537,8 @@ namespace TelegramAutoDownload.Tests
         [InlineData("")]
         public void PlainTextMessage_NoHttp_IsNotDetectedAsUrl(string text)
         {
-            bool hasUrl = !string.IsNullOrEmpty(text) &&
-                          text.Contains("http", StringComparison.OrdinalIgnoreCase);
-            hasUrl.Should().BeFalse($"'{text}' should NOT be detected as a URL message");
+            var msg = new Message { message = text };
+            TelegramApp.GetTextPluginQueuePreview(msg).Should().BeNull($"'{text}' should NOT queue for URL plugins");
         }
 
         // ---------------------------------------------------------------------------

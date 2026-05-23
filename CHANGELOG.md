@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.9.1] - 2026-05-23
+
+### Fixed
+
+- **Start Icon for magnet links** — pasting a `magnet:` link (or http URL in text) now enqueues the download and sends the Start Icon reaction, same as file attachments
+
 ## [2.9.0] - 2026-05-23
 
 ### Added
