@@ -120,10 +120,9 @@ namespace TelegramAutoDownload
             DownloadProgressService.Instance.DownloadCompleted += (chatName, fileName, bytes, duration) =>
                 _ = _notification.OnDownloadCompletedAsync(chatName, fileName, bytes, duration);
 
-            // Bind active downloads panel through a sorted CollectionView so active downloads stay at top
+            // Newest download always at the top
             _downloadsView = CollectionViewSource.GetDefaultView(DownloadProgressService.Instance.Downloads);
-            _downloadsView.SortDescriptions.Add(new SortDescription(nameof(DownloadItem.SortOrder), ListSortDirection.Ascending));
-            _downloadsView.SortDescriptions.Add(new SortDescription(nameof(DownloadItem.StartTime), ListSortDirection.Descending));
+            _downloadsView.SortDescriptions.Add(new SortDescription(nameof(DownloadItem.EnqueuedAt), ListSortDirection.Descending));
             dgDownloads.ItemsSource = _downloadsView;
 
             DownloadProgressService.Instance.Downloads.CollectionChanged += (_, __) =>
@@ -742,6 +741,11 @@ namespace TelegramAutoDownload
         private void CancelAllDownloads_Click(object sender, RoutedEventArgs e)
         {
             DownloadProgressService.Instance.CancelAllDownloads();
+        }
+
+        private void ClearCompletedDownloads_Click(object sender, RoutedEventArgs e)
+        {
+            DownloadProgressService.Instance.ClearCompletedDownloads();
         }
 
         private void AutoCleanDownloads_Changed(object sender, RoutedEventArgs e)

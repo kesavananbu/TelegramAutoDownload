@@ -55,6 +55,9 @@ namespace TelegramAutoDownload.Models
 
         public bool HasError => !string.IsNullOrEmpty(_errorMessage);
 
+        // When this row was added to the downloads panel (stable — not reset when download starts)
+        public DateTime EnqueuedAt { get; set; } = DateTime.UtcNow;
+
         // Timestamp when this download started (used for speed/ETA calculation)
         public DateTime StartTime { get; set; } = DateTime.UtcNow;
 

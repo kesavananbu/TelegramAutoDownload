@@ -111,7 +111,8 @@ namespace TelegramAutoDownload.Services
                     FileName = previewName,
                     PluginName = pluginName,
                     Status = "⏳ Queued",
-                    Progress = 0
+                    Progress = 0,
+                    EnqueuedAt = DateTime.UtcNow,
                 });
                 QueueChanged?.Invoke();
             });
@@ -163,7 +164,8 @@ namespace TelegramAutoDownload.Services
                     ChatName = chatName,
                     FileName = fileName,
                     PluginName = pluginName,
-                    TotalBytes = totalBytes
+                    TotalBytes = totalBytes,
+                    EnqueuedAt = DateTime.UtcNow,
                 });
             });
         }
@@ -211,7 +213,8 @@ namespace TelegramAutoDownload.Services
                         FileName = fileName,
                         PluginName = pluginName,
                         TotalBytes = totalBytes,
-                        CancellationKey = key
+                        CancellationKey = key,
+                        EnqueuedAt = DateTime.UtcNow,
                     };
                     Downloads.Add(item);
                 }
@@ -371,6 +374,19 @@ namespace TelegramAutoDownload.Services
                     CancellationRegistry.Remove(key);
                     Application.Current?.Dispatcher.InvokeAsync(() => Downloads.Remove(item));
                 });
+            });
+        }
+
+        /// <summary>Removes all successfully completed rows from the downloads list.</summary>
+        public void ClearCompletedDownloads()
+        {
+            Application.Current?.Dispatcher.InvokeAsync(() =>
+            {
+                var done = Downloads.Where(d => d.Status == "✔ Done").ToList();
+                foreach (var item in done)
+                    Downloads.Remove(item);
+                if (done.Count > 0)
+                    QueueChanged?.Invoke();
             });
         }
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.9.3] - 2026-05-24
+
+### Added
+
+- **Clear done** button in Downloads panel — manually remove completed rows (✔ Done only)
+
+### Changed
+
+- Downloads list sorted **newest first** (most recently added at the top)
+- **Auto clean** checkbox moved to its own row with spacing from action buttons
+
 ## [2.9.2] - 2026-05-23
 
 ### Fixed

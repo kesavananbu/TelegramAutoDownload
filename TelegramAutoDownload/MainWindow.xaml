@@ -472,9 +472,9 @@
             <!-- Active Downloads panel -->
             <Border Grid.Row="2" Background="#FAFAFA" BorderBrush="#E0E0E0" BorderThickness="0,1,0,0">
                 <DockPanel>
-                    <!-- Panel header with live download count badge -->
-                    <DockPanel DockPanel.Dock="Top" Margin="12,8,12,4">
-                        <StackPanel Orientation="Horizontal">
+                    <!-- Panel header: title/badges on row 1, actions on row 2 -->
+                    <StackPanel DockPanel.Dock="Top" Margin="12,8,12,4">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <TextBlock Text="⬇ Downloads" FontWeight="SemiBold" Foreground="#444" VerticalAlignment="Center"/>
                             <!-- Active badge -->
                             <Border x:Name="downloadCountBadge" Background="#2AABEE" CornerRadius="10" Padding="6,1" Margin="8,0,0,0" VerticalAlignment="Center">
@@ -498,20 +498,29 @@
                                 </StackPanel>
                             </Border>
                         </StackPanel>
-                        <!-- Auto clean + Cancel All — right-aligned in the header bar -->
-                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,6,0,0">
                             <CheckBox x:Name="chkAutoCleanDownloads" Content="Auto clean"
-                                      IsChecked="True" VerticalAlignment="Center" Margin="0,0,12,0"
+                                      IsChecked="True" VerticalAlignment="Center" VerticalContentAlignment="Center"
+                                      FontSize="11" Margin="0,0,20,0"
                                       ToolTip="Remove completed downloads from the list after a few seconds"
                                       Checked="AutoCleanDownloads_Changed" Unchecked="AutoCleanDownloads_Changed"/>
+                            <Button x:Name="btnClearCompleted" Content="🗑 Clear done"
+                                    Height="22" Padding="8,0" FontSize="11"
+                                    VerticalAlignment="Center" Margin="0,0,20,0"
+                                    Foreground="#4CAF50" Background="Transparent"
+                                    BorderBrush="#4CAF50" BorderThickness="1"
+                                    Cursor="Hand" ToolTip="Remove completed downloads from the list"
+                                    Click="ClearCompletedDownloads_Click"/>
                             <Button x:Name="btnCancelAll" Content="✕ Cancel All"
                                     Height="22" Padding="8,0" FontSize="11"
+                                    VerticalAlignment="Center"
                                     Foreground="#F44336" Background="Transparent"
                                     BorderBrush="#F44336" BorderThickness="1"
                                     Cursor="Hand" ToolTip="Cancel all active downloads"
                                     Click="CancelAllDownloads_Click"/>
                         </StackPanel>
-                    </DockPanel>
+                    </StackPanel>
 
                     <DataGrid x:Name="dgDownloads" AutoGenerateColumns="False"
                               IsReadOnly="True" CanUserAddRows="False"
