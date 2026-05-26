@@ -6,7 +6,9 @@ using Microsoft.Extensions.Hosting;
 using Serilog;
 using TelegramAutoDownload.Headless;
 using TelegramAutoDownload.Headless.Data;
+using TelegramAutoDownload.Headless.Scanning;
 using TelegramAutoDownload.Models;
+using TelegramClient.Models;
 
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
@@ -21,8 +23,11 @@ builder.Host.UseSerilog();
 builder.Services.AddSingleton<ConfigStore>();
 builder.Services.AddSingleton<Database>();
 builder.Services.AddSingleton<MediaRepository>();
+builder.Services.AddSingleton<MediaTracker>();
 builder.Services.AddSingleton<HeadlessHost>();
 builder.Services.AddSingleton<LoginCoordinator>();
+builder.Services.AddSingleton<BootstrapManager>();
+builder.Services.AddHostedService<DownloadOrchestrator>();
 
 builder.WebHost.UseUrls(Environment.GetEnvironmentVariable("LISTEN_URL") ?? "http://0.0.0.0:8080");
 
@@ -190,6 +195,37 @@ app.MapGet("/api/queue/stats/by-chat", async (MediaRepository repo) =>
             bytes  = g.Sum(x => x.total_bytes),
             byStatus = g.Select(x => new { status = x.status, count = x.count, bytes = x.total_bytes }),
         })));
+
+// ─── Bootstrap (per-chat history sweep) ─────────────────────────────────────
+app.MapPost("/api/chats/{id:long}/bootstrap", (long id, HeadlessHost host, BootstrapManager mgr) =>
+{
+    var cfg = host.ReadConfig();
+    var chat = cfg.Chats.FirstOrDefault(c => c.Id == id);
+    if (chat == null) return Results.NotFound(new { error = "Chat not found — refresh the chat list first." });
+    if (host.Telegram == null) return Results.BadRequest(new { error = "Not logged in." });
+    try { mgr.Start(chat); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    return Results.Json(new { ok = true });
+});
+
+app.MapDelete("/api/chats/{id:long}/bootstrap", (long id, BootstrapManager mgr) =>
+    Results.Json(new { cancelled = mgr.Cancel(id) }));
+
+app.MapGet("/api/chats/{id:long}/bootstrap", (long id, BootstrapManager mgr) =>
+{
+    var s = mgr.Get(id);
+    return s == null ? Results.NotFound() : Results.Json(s);
+});
+
+app.MapGet("/api/bootstrap/jobs", (BootstrapManager mgr) => Results.Json(mgr.Snapshot()));
+
+// ─── Queue actions: retry / requeue a failed or skipped row ─────────────────
+app.MapPost("/api/queue/{chatId:long}/{messageId:int}/retry",
+    async (long chatId, int messageId, MediaRepository repo) =>
+{
+    await repo.SetStatusAsync(chatId, messageId, MediaStatus.Queued);
+    return Results.Json(new { ok = true });
+});
 
 // ─── Live status ────────────────────────────────────────────────────────────
 app.MapGet("/api/downloads", (HeadlessHost host) =>

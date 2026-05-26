@@ -90,6 +90,41 @@ public sealed class MediaRepository
             new { path, chatId, messageId });
     }
 
+    /// <summary>
+    /// Atomically claims up to <paramref name="limit"/> rows in <c>queued</c> state by
+    /// flipping them to <c>in_progress</c> and returning the claimed rows.
+    /// Two callers cannot pick the same row — SQLite's <c>RETURNING</c> applies after the UPDATE.
+    /// </summary>
+    public async Task<IReadOnlyList<MediaRecord>> PickQueuedAsync(int limit)
+    {
+        if (limit <= 0) return Array.Empty<MediaRecord>();
+        await using var c = _db.Open();
+        var rows = await c.QueryAsync<MediaRecord>(
+            """
+            UPDATE Media
+               SET status     = 'in_progress',
+                   started_at = datetime('now')
+             WHERE rowid IN (
+                SELECT rowid FROM Media
+                 WHERE status = 'queued'
+                 ORDER BY queued_at ASC, message_id ASC
+                 LIMIT @limit
+             )
+            RETURNING *
+            """, new { limit });
+        return rows.AsList();
+    }
+
+    /// <summary>Move all <c>pending</c> rows for a chat to <c>queued</c>. Used after bootstrap.</summary>
+    public async Task<int> PromotePendingToQueuedAsync(long chatId)
+    {
+        await using var c = _db.Open();
+        return await c.ExecuteAsync(
+            "UPDATE Media SET status = 'queued', queued_at = datetime('now') " +
+            "WHERE chat_id = @chatId AND status = 'pending'",
+            new { chatId });
+    }
+
     // ── Aggregates / stats ────────────────────────────────────────────────────
     public async Task<IReadOnlyList<MediaStatusCount>> GetGlobalStatusCountsAsync()
     {

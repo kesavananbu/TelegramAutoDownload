@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Serilog;
+using TelegramAutoDownload.Headless.Scanning;
 using TelegramAutoDownload.Models;
 using TelegramClient;
 using TelegramClient.Models;
@@ -27,12 +28,17 @@ public sealed record DownloadEntry(
 public sealed class HeadlessHost
 {
     private readonly ConfigStore _config;
+    private readonly MediaTracker? _tracker;
     private readonly object _lock = new();
     private readonly ConcurrentDictionary<string, DownloadEntry> _downloads = new();
 
     public TelegramApp? Telegram { get; private set; }
 
-    public HeadlessHost(ConfigStore config) { _config = config; }
+    public HeadlessHost(ConfigStore config, MediaTracker? tracker = null)
+    {
+        _config = config;
+        _tracker = tracker;
+    }
 
     /// <summary>Initialise <see cref="Telegram"/> lazily; reuses the existing instance on subsequent calls.</summary>
     public async Task EnsureTelegramAsync()
@@ -48,6 +54,9 @@ public sealed class HeadlessHost
         Telegram = new TelegramApp(cfg.AppId, cfg.ApiHash);
         await Telegram.WaitForLoginAsync(2000);
         WireDownloadEvents(Telegram);
+        // Attach DB tracker AFTER the live event wiring so MediaTracker layers on top
+        // (its handlers chain rather than replace the existing in-memory ones).
+        _tracker?.Attach(Telegram);
     }
 
     /// <summary>Called by LoginCoordinator after a successful login — applies the saved config.</summary>

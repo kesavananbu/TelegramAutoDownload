@@ -56,6 +56,14 @@ namespace TelegramClient
         /// Arguments: (chatDto, entry). The receiver should call ChatHistoryService.AppendEntryAsync.
         /// </summary>
         public Action<ChatDto, HistoryEntry>? OnHistoryEntry { get; set; }
+
+        /// <summary>
+        /// Fired once per discovered message (live updates only) so downstream
+        /// observers — e.g. the persistent media tracker — can record full
+        /// document metadata. Receivers must not block.
+        /// </summary>
+        public Action<ChatDto, TL.Message>? OnMessageDiscovered { get; set; }
+
         public readonly Client Client;
         private FactoryMessagesService factoryService;
         private FactoryUserService factoryUserService;
@@ -308,6 +316,11 @@ namespace TelegramClient
 
                         if (updateNewMessage.message is Message infoMessage)
                         {
+                            // Notify persistent-tracking observers (Phase 2). Fires regardless
+                            // of whether the message has downloadable media — observers decide.
+                            try { OnMessageDiscovered?.Invoke(chat, infoMessage); }
+                            catch (Exception ex) { Log.Warning(ex, "OnMessageDiscovered handler threw"); }
+
                             // Append to JSONL history file if the chat has SaveHistory enabled.
                             // Runs for every message type (text, media, stickers, etc.) — the
                             // history captures the full conversation, not just downloadable media.
@@ -650,9 +663,24 @@ namespace TelegramClient
         }
 
         /// <summary>
-        /// Resolves a chat/channel/user to an <see cref="InputPeer"/> for history API calls.
+        /// Re-fetches the message identified by (chat, msgId) and dispatches it through
+        /// the factory pipeline (native media / URL plugin / torrent). Returns null when
+        /// the message can no longer be fetched (deleted, no access, etc.).
+        /// Used by the headless DownloadOrchestrator to drive queued downloads from the DB.
         /// </summary>
-        private async Task<InputPeer?> ResolveInputPeerAsync(ChatDto chatDto)
+        public async Task<ResultExecute?> ExecuteByMessageIdAsync(ChatDto chat, int msgId)
+        {
+            if (factoryService == null) return null;
+            var msg = await RefreshMessageAsync(chat, msgId).ConfigureAwait(false);
+            if (msg == null) return null;
+            return await factoryService.ExecuteDirectAsync(msg, chat).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Resolves a chat/channel/user to an <see cref="InputPeer"/> for history API calls.
+        /// Public so external scanners (e.g. headless BootstrapScanner) can paginate history directly.
+        /// </summary>
+        public async Task<InputPeer?> ResolveInputPeerAsync(ChatDto chatDto)
         {
             if (_accessHashes.TryGetValue(chatDto.Id, out var hash))
             {
