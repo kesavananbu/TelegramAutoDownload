@@ -305,6 +305,7 @@ function chatRow(c) {
     <td><input type="text" data-k="folderTemplate" value="${escape(c.folderTemplate || '')}" placeholder="{Type}/{ChatName}"></td>
     <td><input type="checkbox" data-k="saveHistory" ${c.saveHistory ? 'checked' : ''}></td>
     <td><button data-act="bootstrap" title="Rate-limited history scan → queue">⬇ Bootstrap</button></td>
+    <td><button data-act="test-download" title="Download newest 10 media as probe">🧪 Test 10</button></td>
   `;
 
   const patch = {};
@@ -338,8 +339,56 @@ function chatRow(c) {
     finally { e.target.disabled = false; e.target.textContent = '⬇ Bootstrap'; }
   };
 
+  tr.querySelector('[data-act="test-download"]').onclick = async (e) => {
+    if (!confirm(`Test download for "${c.name}"?\n\nFinds the newest 10 media messages, validates settings, and attempts a real download for each.\n\nNothing is written to the queue database. Check Logs tab for [TestDownload] lines.`))
+      return;
+    e.target.disabled = true; e.target.textContent = '…';
+    try {
+      const report = await api(`/api/chats/${c.id}/test-download?limit=10`, { method: 'POST' });
+      showTestDownloadReport(report);
+    } catch (err) { alert(err.message); }
+    finally { e.target.disabled = false; e.target.textContent = '🧪 Test 10'; }
+  };
+
   return tr;
 }
+
+function showTestDownloadReport(report) {
+  const panel = $('#test-download-panel');
+  const summary = $('#test-download-summary');
+  const detail = $('#test-download-detail');
+  if (!panel || !summary || !detail) return;
+
+  panel.classList.remove('hidden');
+  panel.classList.toggle('danger-card', !report.readyForBootstrap);
+  summary.innerHTML = `<strong>${escape(report.chatName)}</strong> — ${escape(report.summary)}<br>` +
+    `Samples: ${report.samplesFound}/${report.requestedSamples} · ` +
+    `✓ ${report.succeeded} · skip ${report.skipped} · ✗ ${report.failed} · ` +
+    (report.readyForBootstrap
+      ? '<span style="color:#1a7f4c">Ready for bootstrap</span>'
+      : '<span style="color:#a22">Fix issues before bootstrap</span>');
+
+  const lines = [];
+  lines.push('=== SETUP ===');
+  for (const s of report.setupLogs || [])
+    lines.push(`${s.ok ? 'OK' : 'FAIL'}  [${s.phase}] ${s.detail}`);
+
+  lines.push('', '=== ITEMS ===');
+  for (const it of report.items || []) {
+    lines.push(`--- msg ${it.messageId} · ${it.kind} · ${it.outcome} ---`);
+    if (it.fileName) lines.push(`    file: ${it.fileName} (${it.sizeBytes} bytes)`);
+    for (const s of it.steps || [])
+      lines.push(`  ${s.ok ? 'OK' : 'FAIL'}  [${s.phase}] ${s.detail}`);
+    if (it.error) lines.push(`  => ${it.error}`);
+  }
+
+  detail.textContent = lines.join('\n');
+  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+$('#btn-test-download-dismiss')?.addEventListener('click', () => {
+  $('#test-download-panel')?.classList.add('hidden');
+});
 
 function escape(s) { return String(s ?? '').replace(/[&<>"]/g, ch => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[ch])); }
 

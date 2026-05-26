@@ -34,6 +34,7 @@ builder.Services.AddSingleton<LoginCoordinator>();
 builder.Services.AddSingleton<FloodWaitTracker>();
 builder.Services.AddSingleton<ScanRateLimits>();
 builder.Services.AddSingleton<BootstrapManager>();
+builder.Services.AddSingleton<ChatDownloadTester>();
 builder.Services.AddSingleton<HeadlessLogReader>();
 builder.Services.AddHostedService<DownloadOrchestrator>();
 
@@ -339,6 +340,32 @@ app.MapGet("/api/queue/items", async (MediaRepository repo, string? status, int?
 // ─── Bootstrap (per-chat history sweep) ─────────────────────────────────────
 app.MapPost("/api/chats/{id:long}/bootstrap", (long id, HeadlessHost host, BootstrapManager mgr, BootstrapRequest? req) =>
     TryStartBootstrap(id, host, mgr, req, requireMonitored: false));
+
+app.MapPost("/api/chats/{id:long}/test-download", async (
+    long id, HeadlessHost host, ChatDownloadTester tester, int? limit, CancellationToken ct) =>
+{
+    var cfg = host.ReadConfig();
+    var chat = cfg.Chats.FirstOrDefault(c => c.Id == id);
+    if (chat == null)
+        return Results.NotFound(new { error = "Chat not found — refresh the chat list first." });
+    if (host.Telegram == null)
+        return Results.BadRequest(new { error = "Not logged in." });
+
+    try
+    {
+        var report = await tester.RunAsync(chat, limit ?? 10, ct).ConfigureAwait(false);
+        return Results.Json(report);
+    }
+    catch (OperationCanceledException)
+    {
+        return Results.StatusCode(499);
+    }
+    catch (Exception ex)
+    {
+        Log.Warning(ex, "Test download failed for chat {ChatId}", id);
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
 
 app.MapDelete("/api/chats/{id:long}/bootstrap", (long id, BootstrapManager mgr) =>
     Results.Json(new { cancelled = mgr.Cancel(id) }));

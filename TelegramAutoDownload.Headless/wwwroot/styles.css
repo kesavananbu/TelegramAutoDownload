@@ -53,6 +53,7 @@ label.input-danger input { border-color: #e64545; background: #fff5f5; }
 .log-view .lv-ERR, .log-view .lv-FTL { color: #f08080; }
 .log-view .lv-DBG, .log-view .lv-VRB { color: #9aa3b2; }
 .card h2 { margin-top: 0; }
+.card.danger-card { border: 1px solid #f1a0a0; background: #fffafa; }
 .step { margin-top: 1rem; }
 .step.hidden, .hidden { display: none; }
 label { display: block; margin: .65rem 0; }
