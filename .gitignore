@@ -1,6 +1,8 @@
 
 _tmp_out/
 
+.claude/
+
 # Sensitive runtime files
 config.txt
 .env
@@ -430,8 +432,11 @@ FodyWeavers.xsd
 
 /TelegramAutoDownload/bin
 
-p u b l i s h _ r u n /  
- p u b l i s h _ r u n /  
- p u b l i s h _ o u t /  
+p u b l i s h _ r u n / 
+ 
+ p u b l i s h _ r u n / 
+ 
+ p u b l i s h _ o u t / 
+ 
  
 cache/

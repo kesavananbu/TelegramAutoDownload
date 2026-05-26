@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -250,25 +251,36 @@ app.MapGet("/api/logs/search", (HeadlessLogReader logs, string? file, string q, 
     }
 });
 
-app.MapGet("/api/logs/stream", async (HttpContext ctx, HeadlessLogReader logs, string? file, long? fromOffset, CancellationToken ct) =>
+app.MapGet("/api/logs/stream", async Task (HttpContext ctx, HeadlessLogReader logs, string? file, long? fromOffset, CancellationToken ct) =>
 {
+    string name;
     try
     {
-        var name = logs.ResolveSafeFileName(file);
-        var path = Path.Combine(HeadlessPaths.LogsDir, name);
-        var offset = fromOffset ?? (File.Exists(path) ? new FileInfo(path).Length : 0L);
+        name = logs.ResolveSafeFileName(file);
+    }
+    catch (Exception ex) when (ex is FileNotFoundException or ArgumentException)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+        await ctx.Response.WriteAsJsonAsync(new { error = ex.Message }, ct);
+        return;
+    }
 
-        ctx.Response.Headers.CacheControl = "no-cache";
-        ctx.Response.ContentType = "text/event-stream";
+    var path = Path.Combine(HeadlessPaths.LogsDir, name);
+    var offset = fromOffset ?? (File.Exists(path) ? new FileInfo(path).Length : 0L);
 
+    ctx.Response.Headers.CacheControl = "no-cache";
+    ctx.Response.ContentType = "text/event-stream";
+
+    try
+    {
         while (!ct.IsCancellationRequested)
         {
             var chunk = logs.ReadSinceOffset(name, ref offset);
             foreach (var line in chunk.Lines)
             {
-                await ctx.Response.WriteAsync("data: ", ct);
-                await ctx.Response.WriteAsJsonAsync(new { line.Text, line.Level }, ct);
-                await ctx.Response.WriteAsync("\n\n", ct);
+                // SSE body must stay text/event-stream — WriteAsJsonAsync would reset Content-Type.
+                var payload = JsonSerializer.Serialize(new { text = line.Text, level = line.Level });
+                await ctx.Response.WriteAsync($"data: {payload}\n\n", ct);
             }
             if (chunk.Lines.Count > 0)
                 await ctx.Response.Body.FlushAsync(ct);
@@ -277,11 +289,6 @@ app.MapGet("/api/logs/stream", async (HttpContext ctx, HeadlessLogReader logs, s
         }
     }
     catch (OperationCanceledException) { /* client disconnected */ }
-    catch (Exception ex) when (ex is FileNotFoundException or ArgumentException)
-    {
-        ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
-        await ctx.Response.WriteAsJsonAsync(new { error = ex.Message }, ct);
-    }
 });
 
 // ─── Queue / persisted-media stats (Phase 1: visibility only) ───────────────
@@ -349,6 +356,12 @@ app.MapPost("/api/queue/{chatId:long}/{messageId:int}/retry",
 {
     await repo.SetStatusAsync(chatId, messageId, MediaStatus.Queued);
     return Results.Json(new { ok = true });
+});
+
+app.MapPost("/api/queue/retry-failed", async (MediaRepository repo, long? chatId) =>
+{
+    var requeued = await repo.RequeueAllFailedAsync(chatId);
+    return Results.Json(new { ok = true, requeued });
 });
 
 // ─── Live status ────────────────────────────────────────────────────────────

@@ -325,6 +325,28 @@ function chatName(chatId) {
   return c ? c.name : `#${chatId}`;
 }
 
+async function retryAllFailed(chatId = null) {
+  const stats = await api('/api/queue/stats');
+  const count = chatId
+    ? statusCount(
+        (await api('/api/queue/stats/by-chat')).find(r => r.chatId === chatId)?.byStatus,
+        'failed')
+    : statusCount(stats.byStatus, 'failed');
+  if (!count) {
+    alert('No failed items to retry.');
+    return;
+  }
+  const scope = chatId ? `"${chatName(chatId)}"` : 'all chats';
+  if (!confirm(`Re-queue ${count} failed item(s) for ${scope}?\n\nThe download orchestrator will pick them up automatically.`))
+    return;
+  const url = chatId
+    ? `/api/queue/retry-failed?chatId=${chatId}`
+    : '/api/queue/retry-failed';
+  const res = await api(url, { method: 'POST' });
+  alert(`Re-queued ${res.requeued} item(s).`);
+  refreshQueue();
+}
+
 // ─── Queue ────────────────────────────────────────────────────────────────────
 async function refreshQueue() {
   try {
@@ -436,13 +458,22 @@ function renderQueueByChat(rows) {
       <td>${statusCount(r.byStatus, 'failed')}</td>
       <td>${statusCount(r.byStatus, 'skipped')}</td>
       <td>${fmtBytes(r.bytes)}</td>
-      <td><button data-act="bootstrap" data-id="${r.chatId}">Bootstrap</button></td>`;
+      <td class="actions-cell">
+        <button data-act="bootstrap" data-id="${r.chatId}">Bootstrap</button>
+        ${statusCount(r.byStatus, 'failed') ? `<button data-act="retry-failed" data-id="${r.chatId}">Retry failed</button>` : ''}
+      </td>`;
     tr.querySelector('[data-act="bootstrap"]').onclick = async (e) => {
       e.target.disabled = true; e.target.textContent = '…';
       try { await startBootstrap(r.chatId); refreshQueue(); }
       catch (err) { alert(err.message); }
       finally { e.target.disabled = false; e.target.textContent = 'Bootstrap'; }
     };
+    tr.querySelector('[data-act="retry-failed"]')?.addEventListener('click', async (e) => {
+      e.target.disabled = true;
+      try { await retryAllFailed(r.chatId); }
+      catch (err) { alert(err.message); }
+      finally { e.target.disabled = false; }
+    });
     body.appendChild(tr);
   });
 }
@@ -515,6 +546,13 @@ $('#btn-save-limits').onclick = async () => {
 };
 
 $('#btn-refresh-failed').onclick = () => refreshQueue();
+$('#btn-retry-all-failed').onclick = async () => {
+  const btn = $('#btn-retry-all-failed');
+  btn.disabled = true;
+  try { await retryAllFailed(); }
+  catch (err) { alert(err.message); }
+  finally { btn.disabled = false; }
+};
 
 // ─── Status ─────────────────────────────────────────────────────────────────
 async function refreshStatus() {

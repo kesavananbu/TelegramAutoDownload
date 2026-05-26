@@ -82,6 +82,32 @@ public sealed class MediaRepository
         await c.ExecuteAsync(sql, new { status = status.ToDbValue(), error, chatId, messageId });
     }
 
+    /// <summary>Move all <c>failed</c> rows back to <c>queued</c>. Optionally scoped to one chat.</summary>
+    public async Task<int> RequeueAllFailedAsync(long? chatId = null)
+    {
+        await using var c = _db.Open();
+        if (chatId.HasValue)
+        {
+            return await c.ExecuteAsync(
+                """
+                UPDATE Media
+                   SET status     = 'queued',
+                       queued_at  = datetime('now'),
+                       last_error = NULL
+                 WHERE status = 'failed' AND chat_id = @chatId
+                """, new { chatId = chatId.Value });
+        }
+
+        return await c.ExecuteAsync(
+            """
+            UPDATE Media
+               SET status     = 'queued',
+                   queued_at  = datetime('now'),
+                   last_error = NULL
+             WHERE status = 'failed'
+            """);
+    }
+
     public async Task SetDownloadedPathAsync(long chatId, int messageId, string path)
     {
         await using var c = _db.Open();

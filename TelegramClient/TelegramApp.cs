@@ -190,25 +190,29 @@ namespace TelegramClient
         {
             try
             {
-                _accessHashes.TryGetValue(chatDto.Id, out var accessHash);
-                MessageBase[]? messages;
-
-                if (accessHash != 0)
+                // Resolve the chat peer first (populates access_hash from dialogs when needed).
+                // messages.getMessages by ID alone does not work for group/channel history rows.
+                var peer = await ResolveInputPeerAsync(chatDto).ConfigureAwait(false);
+                if (peer == null)
                 {
-                    // Channel or supergroup — must use Channels_GetMessages for fresh references
+                    Log.Warning("RefreshMessageAsync: could not resolve peer for chat {ChatName} ({ChatId})",
+                        chatDto.Name, chatDto.Id);
+                    return null;
+                }
+
+                if (peer is InputPeerChannel ch)
+                {
                     var result = await Client.Channels_GetMessages(
-                        new InputChannel(chatDto.Id, accessHash),
-                        new InputMessageID { id = msgId });
-                    messages = result?.Messages;
-                }
-                else
-                {
-                    // Basic group or user conversation
-                    var result = await Client.Messages_GetMessages(new InputMessageID { id = msgId });
-                    messages = result?.Messages;
+                        new InputChannel(ch.channel_id, ch.access_hash),
+                        new InputMessageID { id = msgId }).ConfigureAwait(false);
+                    var hit = result?.Messages?.OfType<Message>().FirstOrDefault(m => m.ID == msgId);
+                    if (hit != null) return hit;
                 }
 
-                return messages?.OfType<Message>().FirstOrDefault();
+                // Basic group, user DM, or channel fallback — fetch the page containing msgId.
+                var history = await Client.Messages_GetHistory(
+                    peer, offset_id: msgId + 1, add_offset: -1, limit: 1).ConfigureAwait(false);
+                return history?.Messages?.OfType<Message>().FirstOrDefault(m => m.ID == msgId);
             }
             catch (Exception ex)
             {
