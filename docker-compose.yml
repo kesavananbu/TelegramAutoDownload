@@ -1,0 +1,18 @@
+services:
+  telegram-auto-download:
+    build: .
+    image: telegram-auto-download:latest
+    container_name: tad
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # Optional — if you'd rather not set credentials from the web UI on first run,
+      # uncomment and put yours here (get them from https://my.telegram.org).
+      # APP_ID: "12345678"
+      # API_HASH: "abcdef1234567890abcdef1234567890"
+      DATA_DIR: /data
+      DOWNLOADS_DIR: /downloads
+    volumes:
+      - ./tad-data:/data
+      - ./tad-downloads:/downloads

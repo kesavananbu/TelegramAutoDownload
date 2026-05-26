@@ -1,0 +1,15 @@
+**/bin
+**/obj
+**/.vs
+**/.idea
+**/.vscode
+**/node_modules
+*.user
+*.suo
+installer/
+TelegramAutoDownload.Tests/
+TelegramAutoDownload.UITests/
+.git/
+.github/
+tad-data/
+tad-downloads/

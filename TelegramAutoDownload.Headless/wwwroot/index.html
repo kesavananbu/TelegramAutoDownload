@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TelegramAutoDownload</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<header>
+  <h1>Telegram Auto Download</h1>
+  <nav>
+    <button data-tab="login"   class="active">Login</button>
+    <button data-tab="chats"   disabled>Chats</button>
+    <button data-tab="status"  disabled>Status</button>
+    <button data-tab="settings" disabled>Settings</button>
+  </nav>
+  <div id="conn"></div>
+</header>
+
+<main>
+  <!-- LOGIN -->
+  <section id="tab-login" class="tab active">
+    <div class="card" id="login-card">
+      <h2>Sign in to Telegram</h2>
+      <div id="login-error" class="error hidden"></div>
+
+      <div id="step-creds" class="step hidden">
+        <p class="hint">No API credentials yet. Get them from <a href="https://my.telegram.org" target="_blank">my.telegram.org</a>.</p>
+        <label>App ID <input id="appId" type="number"></label>
+        <label>API Hash <input id="apiHash" type="text"></label>
+        <button id="btn-save-creds">Save credentials</button>
+      </div>
+
+      <div id="step-phone" class="step">
+        <label>Phone (with country code) <input id="phone" type="tel" placeholder="+15551234567"></label>
+        <button id="btn-phone">Send code</button>
+      </div>
+
+      <div id="step-code" class="step hidden">
+        <label>Verification code <input id="code" type="text" inputmode="numeric" autocomplete="one-time-code"></label>
+        <button id="btn-code">Verify</button>
+      </div>
+
+      <div id="step-password" class="step hidden">
+        <label>2FA password <input id="password" type="password"></label>
+        <button id="btn-password">Sign in</button>
+      </div>
+
+      <div id="step-done" class="step hidden">
+        <p>✅ Signed in. Open the <strong>Chats</strong> tab to choose which chats to monitor.</p>
+        <button id="btn-logout">Sign out</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- CHATS -->
+  <section id="tab-chats" class="tab">
+    <div class="toolbar">
+      <button id="btn-refresh-chats">🔄 Refresh from Telegram</button>
+      <input id="chat-search" type="search" placeholder="Filter…">
+      <span id="chat-count" class="muted"></span>
+    </div>
+    <table id="chat-table">
+      <thead>
+        <tr>
+          <th title="Monitor this chat">☑</th>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Members</th>
+          <th title="Min file size in MB">Min MB</th>
+          <th title="Videos / Photos / Music / Files">V P M F</th>
+          <th title="YouTube / SocialMedia / Direct / Torrent">Y S D T</th>
+          <th>Filter (regex; ;)</th>
+          <th>Folder template</th>
+          <th>History</th>
+          <th>Sync</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <!-- STATUS -->
+  <section id="tab-status" class="tab">
+    <div class="cards">
+      <div class="metric"><span class="muted">Monitored</span><strong id="m-monitored">0</strong></div>
+      <div class="metric"><span class="muted">Active</span><strong id="m-active">0</strong></div>
+      <div class="metric"><span class="muted">Folder</span><strong id="m-folder">—</strong></div>
+    </div>
+    <h3>Live downloads</h3>
+    <table id="dl-table">
+      <thead>
+        <tr><th>Chat</th><th>File</th><th>Plugin</th><th>Status</th><th>Progress</th><th>Bytes</th><th>Error</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <!-- SETTINGS -->
+  <section id="tab-settings" class="tab">
+    <div class="card">
+      <h2>Settings</h2>
+      <label>Download folder <input id="s-folder" type="text"></label>
+      <button id="btn-save-folder">Save folder</button>
+      <hr>
+      <label>Parallel threads (1–10) <input id="s-threads" type="number" min="1" max="10"></label>
+      <button id="btn-save-threads">Save threads</button>
+    </div>
+  </section>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>

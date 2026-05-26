@@ -60,19 +60,17 @@ namespace SocialMediaPlugin
 
         public override async Task<ResultExecute> ExecuteAsync(Config config)
         {
-            // Prefer writable AppData tools folder; fall back to install dir (for portable/dev use)
-            var appDataTools = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "TelegramAutoDownload", "tools", "yt-dlp.exe");
-            var installTools = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tools", "yt-dlp.exe");
-            var ytdlpPath = File.Exists(appDataTools) ? appDataTools : installTools;
-
-            if (!File.Exists(ytdlpPath))
+            // Windows: bundled yt-dlp.exe (AppData tools folder preferred, then install dir).
+            // Linux/macOS: rely on `yt-dlp` resolved from PATH (e.g. apt-installed in Docker).
+            var ytdlpPath = ResolveYtdlpPath();
+            if (ytdlpPath == null)
             {
                 return new ResultExecute(config.ChatName)
                 {
                     IsSuccess = false,
-                    ErrorMessage = "yt-dlp.exe not found. It will be downloaded automatically on next startup."
+                    ErrorMessage = OperatingSystem.IsWindows()
+                        ? "yt-dlp.exe not found. It will be downloaded automatically on next startup."
+                        : "yt-dlp not found on PATH. Install it (e.g. `apt install yt-dlp`)."
                 };
             }
 
@@ -235,6 +233,36 @@ namespace SocialMediaPlugin
             }
 
             return string.IsNullOrEmpty(hint) ? rawError : $"{hint}\n\nDetail: {rawError}";
+        }
+
+        /// <summary>
+        /// Returns the absolute path to yt-dlp, or null if it cannot be found.
+        /// Windows: checks AppData/TelegramAutoDownload/tools then install dir.
+        /// Linux/macOS: also probes PATH for the apt/brew-installed binary.
+        /// </summary>
+        private static string? ResolveYtdlpPath()
+        {
+            var exeName = OperatingSystem.IsWindows() ? "yt-dlp.exe" : "yt-dlp";
+
+            var appDataTools = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "TelegramAutoDownload", "tools", exeName);
+            if (File.Exists(appDataTools)) return appDataTools;
+
+            var installTools = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tools", exeName);
+            if (File.Exists(installTools)) return installTools;
+
+            if (!OperatingSystem.IsWindows())
+            {
+                var paths = (Environment.GetEnvironmentVariable("PATH") ?? string.Empty).Split(Path.PathSeparator);
+                foreach (var dir in paths)
+                {
+                    if (string.IsNullOrWhiteSpace(dir)) continue;
+                    var candidate = Path.Combine(dir, exeName);
+                    if (File.Exists(candidate)) return candidate;
+                }
+            }
+            return null;
         }
     }
 }
