@@ -6,6 +6,7 @@ using Microsoft.Extensions.Hosting;
 using Serilog;
 using TelegramAutoDownload.Headless;
 using TelegramAutoDownload.Headless.Data;
+using TelegramAutoDownload.Headless.Logging;
 using TelegramAutoDownload.Headless.Scanning;
 using TelegramAutoDownload.Models;
 using TelegramClient.Models;
@@ -14,7 +15,10 @@ Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
     .WriteTo.Console()
     .WriteTo.File(Path.Combine(HeadlessPaths.LogsDir, "headless-.log"),
-                  rollingInterval: RollingInterval.Day, retainedFileCountLimit: 7)
+                  rollingInterval: RollingInterval.Day,
+                  retainedFileCountLimit: 7,
+                  shared: true,
+                  outputTemplate: TelegramAutoDownload.Headless.Logging.HeadlessLogFormat.FileOutputTemplate)
     .CreateLogger();
 
 var builder = WebApplication.CreateBuilder(args);
@@ -29,6 +33,7 @@ builder.Services.AddSingleton<LoginCoordinator>();
 builder.Services.AddSingleton<FloodWaitTracker>();
 builder.Services.AddSingleton<ScanRateLimits>();
 builder.Services.AddSingleton<BootstrapManager>();
+builder.Services.AddSingleton<HeadlessLogReader>();
 builder.Services.AddHostedService<DownloadOrchestrator>();
 
 builder.WebHost.UseUrls(Environment.GetEnvironmentVariable("LISTEN_URL") ?? "http://0.0.0.0:8080");
@@ -215,6 +220,69 @@ app.MapPost("/api/chats/{id:long}/sync", (long id, HeadlessHost host, BootstrapM
     TryStartBootstrap(id, host, mgr, req, requireMonitored: true));
 
 app.MapGet("/api/flood-wait", (FloodWaitTracker flood) => Results.Json(ToFloodJson(flood.Snapshot())));
+
+// ─── Logs (tail / search / live stream) ─────────────────────────────────────
+app.MapGet("/api/logs/files", (HeadlessLogReader logs) => Results.Json(logs.ListFiles()));
+
+app.MapGet("/api/logs/tail", (HeadlessLogReader logs, string? file, int? lines, string? level, string? search) =>
+{
+    try
+    {
+        var name = logs.ResolveSafeFileName(file);
+        return Results.Json(logs.Tail(name, lines ?? 500, level, search));
+    }
+    catch (Exception ex) when (ex is FileNotFoundException or ArgumentException)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapGet("/api/logs/search", (HeadlessLogReader logs, string? file, string q, int? skip, int? limit) =>
+{
+    try
+    {
+        var name = logs.ResolveSafeFileName(file);
+        return Results.Json(logs.Search(name, q, skip ?? 0, limit ?? 100));
+    }
+    catch (Exception ex) when (ex is FileNotFoundException or ArgumentException)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapGet("/api/logs/stream", async (HttpContext ctx, HeadlessLogReader logs, string? file, long? fromOffset, CancellationToken ct) =>
+{
+    try
+    {
+        var name = logs.ResolveSafeFileName(file);
+        var path = Path.Combine(HeadlessPaths.LogsDir, name);
+        var offset = fromOffset ?? (File.Exists(path) ? new FileInfo(path).Length : 0L);
+
+        ctx.Response.Headers.CacheControl = "no-cache";
+        ctx.Response.ContentType = "text/event-stream";
+
+        while (!ct.IsCancellationRequested)
+        {
+            var chunk = logs.ReadSinceOffset(name, ref offset);
+            foreach (var line in chunk.Lines)
+            {
+                await ctx.Response.WriteAsync("data: ", ct);
+                await ctx.Response.WriteAsJsonAsync(new { line.Text, line.Level }, ct);
+                await ctx.Response.WriteAsync("\n\n", ct);
+            }
+            if (chunk.Lines.Count > 0)
+                await ctx.Response.Body.FlushAsync(ct);
+
+            await Task.Delay(1000, ct);
+        }
+    }
+    catch (OperationCanceledException) { /* client disconnected */ }
+    catch (Exception ex) when (ex is FileNotFoundException or ArgumentException)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+        await ctx.Response.WriteAsJsonAsync(new { error = ex.Message }, ct);
+    }
+});
 
 // ─── Queue / persisted-media stats (Phase 1: visibility only) ───────────────
 app.MapGet("/api/queue/stats", async (MediaRepository repo) =>

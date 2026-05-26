@@ -11,6 +11,7 @@ $$('header nav button').forEach(b => b.addEventListener('click', () => {
   if (b.dataset.tab === 'queue')    refreshQueue();
   if (b.dataset.tab === 'status')   refreshStatus();
   if (b.dataset.tab === 'settings') loadSettings();
+  if (b.dataset.tab === 'logs')    openLogsTab();
 }));
 
 function unlockTabs(on) {
@@ -572,3 +573,114 @@ async function poll() {
 
 refreshLoginStatus();
 setInterval(poll, 2500);
+
+// ─── Logs (tail + SSE, client ring buffer) ───────────────────────────────────
+const LOG_BUFFER_MAX = 5000;
+const LOG_RENDER_MAX = 2000;
+let logBuffer = [];
+let logStream = null;
+let logSearchMode = false;
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function renderLogView() {
+  const slice = logBuffer.slice(-LOG_RENDER_MAX);
+  $('#log-view').innerHTML = slice.map(l => {
+    const cls = l.level ? `lv-${l.level}` : '';
+    return `<span class="${cls}">${escapeHtml(l.text)}</span>`;
+  }).join('\n');
+  const el = $('#log-view');
+  if ($('#log-follow').checked)
+    el.scrollTop = el.scrollHeight;
+}
+
+function pushLogLines(lines) {
+  for (const l of lines) {
+    logBuffer.push({ text: l.text, level: l.level });
+    if (logBuffer.length > LOG_BUFFER_MAX)
+      logBuffer.shift();
+  }
+  renderLogView();
+}
+
+function stopLogStream() {
+  if (logStream) { logStream.close(); logStream = null; }
+}
+
+function startLogStream(file) {
+  stopLogStream();
+  if (!$('#log-follow').checked) return;
+  const url = `/api/logs/stream?file=${encodeURIComponent(file)}`;
+  logStream = new EventSource(url);
+  logStream.onmessage = (ev) => {
+    try {
+      const row = JSON.parse(ev.data);
+      if (row.text) pushLogLines([row]);
+    } catch {}
+  };
+  logStream.onerror = () => { /* EventSource auto-reconnects */ };
+}
+
+async function loadLogFiles() {
+  const files = await api('/api/logs/files');
+  const sel = $('#log-file');
+  const prev = sel.value;
+  sel.innerHTML = files.map(f =>
+    `<option value="${escapeHtml(f.name)}">${escapeHtml(f.name)} (${fmtBytes(f.sizeBytes)})</option>`
+  ).join('');
+  if (prev && files.some(f => f.name === prev)) sel.value = prev;
+  else if (files.length) sel.value = files[0].name;
+  return files;
+}
+
+async function refreshLogTail() {
+  const file = $('#log-file').value;
+  if (!file) return;
+  logSearchMode = false;
+  const level = $('#log-level').value;
+  const search = $('#log-filter').value.trim();
+  const q = new URLSearchParams({ file, lines: '500' });
+  if (level) q.set('level', level);
+  if (search) q.set('search', search);
+  const tail = await api(`/api/logs/tail?${q}`);
+  logBuffer = tail.lines.map(l => ({ text: l.text, level: l.level }));
+  $('#log-meta').textContent = [
+    tail.message,
+    `${tail.lines.length} line(s) · file ${fmtBytes(tail.fileSizeBytes)}`,
+  ].filter(Boolean).join(' · ');
+  renderLogView();
+  startLogStream(file);
+}
+
+async function searchLogs() {
+  const file = $('#log-file').value;
+  const q = $('#log-filter').value.trim();
+  if (!q) { alert('Enter filter text to search the full file (server-side scan).'); return; }
+  stopLogStream();
+  logSearchMode = true;
+  $('#log-meta').textContent = 'Searching…';
+  const res = await api(`/api/logs/search?file=${encodeURIComponent(file)}&q=${encodeURIComponent(q)}&limit=200`);
+  logBuffer = res.lines.map(l => ({ text: `[${l.lineNumber}] ${l.text}`, level: l.level }));
+  $('#log-meta').textContent = `Search "${res.query}" — ${res.returned} hit(s)${res.hasMore ? ' (more available — refine query)' : ''}`;
+  renderLogView();
+}
+
+async function openLogsTab() {
+  try {
+    await loadLogFiles();
+    await refreshLogTail();
+  } catch (e) { console.warn(e); $('#log-meta').textContent = e.message; }
+}
+
+$('#btn-log-refresh').onclick = () => refreshLogTail().catch(e => alert(e.message));
+$('#btn-log-search').onclick = () => searchLogs().catch(e => alert(e.message));
+$('#log-file').onchange = () => refreshLogTail().catch(e => alert(e.message));
+$('#log-level').onchange = () => refreshLogTail().catch(e => alert(e.message));
+$('#log-filter').onkeydown = (e) => { if (e.key === 'Enter') refreshLogTail().catch(er => alert(er.message)); };
+$('#log-follow').onchange = () => {
+  if ($('#log-follow').checked && !logSearchMode) startLogStream($('#log-file').value);
+  else stopLogStream();
+};
+$('#btn-log-clear').onclick = () => { logBuffer = []; renderLogView(); };

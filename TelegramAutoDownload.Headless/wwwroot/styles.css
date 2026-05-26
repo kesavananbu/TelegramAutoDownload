@@ -35,6 +35,19 @@ label.input-danger input { border-color: #e64545; background: #fff5f5; }
 .parallel-option input[type=checkbox] { width: auto; margin-right: .35rem; }
 .parallel-max { margin-bottom: .75rem; }
 .parallel-max.hidden { display: none; }
+
+.log-toolbar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: end; margin-bottom: .5rem; }
+.log-toolbar label { margin: 0; font-size: 12px; }
+.log-toolbar select, .log-toolbar input[type=search] { min-width: 120px; padding: .35rem .5rem; font: inherit; }
+.inline-check { display: inline-flex; align-items: center; gap: .25rem; font-size: 13px; }
+.log-view {
+  background: #1c1f24; color: #e6e9ee; font: 12px/1.4 ui-monospace, monospace;
+  padding: .75rem; border-radius: 6px; max-height: 65vh; overflow: auto;
+  white-space: pre-wrap; word-break: break-word; margin: .5rem 0 0;
+}
+.log-view .lv-WRN { color: #f0c060; }
+.log-view .lv-ERR, .log-view .lv-FTL { color: #f08080; }
+.log-view .lv-DBG, .log-view .lv-VRB { color: #9aa3b2; }
 .card h2 { margin-top: 0; }
 .step { margin-top: 1rem; }
 .step.hidden, .hidden { display: none; }
