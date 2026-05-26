@@ -50,6 +50,8 @@ public sealed class DownloadOrchestrator : BackgroundService
                     continue;
                 }
 
+                _host.EnsureDownloadPipelineReady();
+
                 if (_host.ReadConfig().DownloadsPaused)
                 {
                     await SafeDelay(IdlePollDelay, stop);

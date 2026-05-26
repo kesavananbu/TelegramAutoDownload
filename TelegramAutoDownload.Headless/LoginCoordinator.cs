@@ -44,6 +44,8 @@ public sealed class LoginCoordinator
             // Give the background login a moment to restore the session
             await Task.Delay(800);
             Stage = IsLoggedIn ? LoginStage.LoggedIn : LoginStage.AwaitingPhone;
+            if (Stage == LoginStage.LoggedIn)
+                await _host.OnLoggedInAsync();
         }
         catch (Exception ex)
         {

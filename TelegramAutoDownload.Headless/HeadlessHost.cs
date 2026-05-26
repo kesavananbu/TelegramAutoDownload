@@ -57,6 +57,17 @@ public sealed class HeadlessHost
         // Attach DB tracker AFTER the live event wiring so MediaTracker layers on top
         // (its handlers chain rather than replace the existing in-memory ones).
         _tracker?.Attach(Telegram);
+
+        // Restored session from session.dat — ProbeAsync may not have run OnLoggedInAsync yet.
+        if (Telegram.Client.UserId != 0)
+            Telegram.UpdateConfig(cfg);
+    }
+
+    /// <summary>Ensure factoryService is initialized after a restored session or config change.</summary>
+    public void EnsureDownloadPipelineReady()
+    {
+        if (Telegram == null || Telegram.Client.UserId == 0) return;
+        Telegram.UpdateConfig(_config.Read());
     }
 
     /// <summary>Called by LoginCoordinator after a successful login — applies the saved config.</summary>

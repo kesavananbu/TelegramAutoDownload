@@ -74,6 +74,9 @@ namespace TelegramClient
         /// <summary>True when logged in and the WTelegram TCP session is active.</summary>
         public bool IsConnected => Client.UserId != 0 && !Client.Disconnected;
 
+        /// <summary>True when <see cref="FactoryMessagesService"/> has been created via <see cref="UpdateConfig"/>.</summary>
+        public bool IsDownloadPipelineReady => factoryService != null;
+
         /// <summary>Fired when connection status changes (connected / disconnected).</summary>
         public event Action<bool>? ConnectionStatusChanged;
 

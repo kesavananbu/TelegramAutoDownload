@@ -59,6 +59,17 @@ public sealed class ChatDownloadTester
                 "Cannot run test — log in first.");
         }
 
+        _host.EnsureDownloadPipelineReady();
+        Setup("download_pipeline", app.IsDownloadPipelineReady,
+            app.IsDownloadPipelineReady
+                ? "FactoryMessagesService initialized."
+                : "Download pipeline not initialized — UpdateConfig failed.");
+        if (!app.IsDownloadPipelineReady)
+        {
+            return BuildReport(chat, sampleSize, 0, setupLogs, items,
+                "Download pipeline not initialized. Restart the container or refresh chats, then retry.");
+        }
+
         Setup("monitor", chat.Selected,
             chat.Selected ? "Monitor enabled." : "Monitor is OFF — enable before bootstrap for live capture.");
 
@@ -243,8 +254,11 @@ public sealed class ChatDownloadTester
 
         if (result == null)
         {
-            Step("download", false, "Download pipeline returned no result.");
-            return Item(rec, "failed", steps, "Download pipeline returned no result");
+            var detail = app.IsDownloadPipelineReady
+                ? "Download pipeline returned no result."
+                : "Download pipeline not initialized (UpdateConfig missing). Restart or refresh chats.";
+            Step("download", false, detail);
+            return Item(rec, "failed", steps, detail);
         }
 
         if (result.IsSuccess && string.IsNullOrEmpty(result.ErrorMessage))
