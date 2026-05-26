@@ -63,8 +63,9 @@
     <div class="card wide info-card">
       <strong>How monitoring works</strong>
       <p class="hint">
-        <strong>☑ Monitor</strong> — forward-only: captures <em>new</em> messages as they arrive. Does <em>not</em> scan old history.<br>
-        <strong>Bootstrap</strong> — rate-limited history scan → items queued in the database → downloaded gradually (safe for huge chats).
+        <strong>☑ Monitor</strong> — forward-only: captures <em>new</em> messages as they arrive. Does <em>not</em> scan old history. Uncheck to stop queue processing for that chat.<br>
+        <strong>Bootstrap</strong> — rate-limited history scan → items queued in the database → downloaded gradually (safe for huge chats).<br>
+        <strong>Clear queue</strong> — on the Queue tab, removes all tracked items for a chat from the database (files on disk are kept).
       </p>
     </div>
     <div class="toolbar">
@@ -95,6 +96,13 @@
   <!-- QUEUE -->
   <section id="tab-queue" class="tab">
     <div class="cards" id="queue-cards"></div>
+
+    <div class="card wide">
+      <h2>Downloads</h2>
+      <p class="hint">Pause stops picking new queued items; state is saved in config. Resume continues where the queue left off.</p>
+      <div id="downloads-paused-banner" class="warn-box hidden"></div>
+      <button id="btn-toggle-downloads" type="button">Pause downloads</button>
+    </div>
 
     <div class="card wide">
       <h2>Rate limits</h2>
@@ -141,6 +149,7 @@
     <h3>Failed items
       <button id="btn-refresh-failed" class="inline">Refresh</button>
       <button id="btn-retry-all-failed" class="inline">Retry all failed</button>
+      <button id="btn-delete-all-failed" class="inline danger">Delete all failed</button>
     </h3>
     <table id="failed-table">
       <thead>

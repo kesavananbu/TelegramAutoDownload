@@ -142,6 +142,7 @@ app.MapGet("/api/settings/limits", (HeadlessHost host, FloodWaitTracker flood, B
         downloadThreads           = cfg.DownloadThreads,
         allowParallelBootstrap    = cfg.AllowParallelBootstrap,
         maxParallelBootstraps     = cfg.MaxParallelBootstraps,
+        downloadsPaused           = cfg.DownloadsPaused,
         activeBootstrapJobs       = mgr.ActiveCount,
         defaults = new
         {
@@ -364,6 +365,34 @@ app.MapPost("/api/queue/retry-failed", async (MediaRepository repo, long? chatId
     return Results.Json(new { ok = true, requeued });
 });
 
+app.MapPost("/api/queue/delete-failed", async (MediaRepository repo, long? chatId) =>
+{
+    var deleted = await repo.DeleteAllFailedAsync(chatId);
+    return Results.Json(new { ok = true, deleted });
+});
+
+app.MapPost("/api/queue/clear", async (MediaRepository repo, long chatId) =>
+{
+    if (chatId == 0) return Results.BadRequest(new { error = "chatId is required." });
+    var deleted = await repo.ClearChatQueueAsync(chatId);
+    return Results.Json(new { ok = true, deleted });
+});
+
+app.MapGet("/api/queue/downloads", (HeadlessHost host) =>
+{
+    var cfg = host.ReadConfig();
+    return Results.Json(new { paused = cfg.DownloadsPaused });
+});
+
+app.MapPost("/api/queue/downloads", async (HeadlessHost host, MediaRepository repo, DownloadsPausedRequest req) =>
+{
+    host.UpdateSettings(c => c.DownloadsPaused = req.Paused);
+    var requeued = 0;
+    if (req.Paused)
+        requeued = await repo.RequeueInProgressAsync();
+    return Results.Json(new { ok = true, paused = req.Paused, requeuedInProgress = requeued });
+});
+
 // ─── Live status ────────────────────────────────────────────────────────────
 app.MapGet("/api/downloads", (HeadlessHost host) =>
     Results.Json(host.SnapshotDownloads().Select(d => new
@@ -390,6 +419,7 @@ app.MapGet("/api/status", (HeadlessHost host, LoginCoordinator login, FloodWaitT
         downloadFolder  = cfg.PathSaveFile,
         monitoredChats  = cfg.Chats.Count(c => c.Selected),
         totalChats      = cfg.Chats.Count,
+        downloadsPaused = cfg.DownloadsPaused,
         activeDownloads = host.SnapshotDownloads().Count(d => d.Status == DownloadStatus.Downloading),
         floodWait       = ToFloodJson(flood.Snapshot()),
     });
@@ -461,6 +491,8 @@ internal record LimitsRequest(
     int? MaxParallelBootstraps);
 
 internal record BootstrapRequest(bool OverrideParallel = false);
+
+internal record DownloadsPausedRequest(bool Paused);
 
 internal record ChatPatch(
     bool?  Selected,

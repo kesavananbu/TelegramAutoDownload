@@ -59,6 +59,34 @@ function renderFloodBanner(flood) {
     (flood.source ? ` · ${flood.source}` : '');
 }
 
+function applyDownloadsPausedUi(paused, requeuedInProgress) {
+  const banner = $('#downloads-paused-banner');
+  const btn = $('#btn-toggle-downloads');
+  if (!banner || !btn) return;
+  if (paused) {
+    banner.classList.remove('hidden');
+    banner.classList.add('danger');
+    banner.textContent = '⏸ Downloads paused — queued items stay in the database until you resume.' +
+      (requeuedInProgress ? ` (${requeuedInProgress} in-progress item(s) moved back to queued.)` : '');
+    btn.textContent = 'Resume downloads';
+    btn.classList.add('primary');
+  } else {
+    banner.classList.add('hidden');
+    banner.textContent = '';
+    btn.textContent = 'Pause downloads';
+    btn.classList.remove('primary');
+  }
+}
+
+async function setDownloadsPaused(paused) {
+  const res = await api('/api/queue/downloads', {
+    method: 'POST',
+    body: JSON.stringify({ paused }),
+  });
+  applyDownloadsPausedUi(res.paused, res.requeuedInProgress);
+  return res;
+}
+
 const LIMIT_THRESHOLDS = {
   scannerCapacity: { max: 100, warn: 20, danger: 50 },
   scannerRefill:   { max: 50,  warn: 5,  danger: 10 },
@@ -347,6 +375,43 @@ async function retryAllFailed(chatId = null) {
   refreshQueue();
 }
 
+async function deleteAllFailed(chatId = null) {
+  const stats = await api('/api/queue/stats');
+  const count = chatId
+    ? statusCount(
+        (await api('/api/queue/stats/by-chat')).find(r => r.chatId === chatId)?.byStatus,
+        'failed')
+    : statusCount(stats.byStatus, 'failed');
+  if (!count) {
+    alert('No failed items to delete.');
+    return;
+  }
+  const scope = chatId ? `"${chatName(chatId)}"` : 'all chats';
+  if (!confirm(`Permanently delete ${count} failed record(s) for ${scope}?\n\nThis removes them from the queue database only — files already on disk are not deleted.`))
+    return;
+  const url = chatId
+    ? `/api/queue/delete-failed?chatId=${chatId}`
+    : '/api/queue/delete-failed';
+  const res = await api(url, { method: 'POST' });
+  alert(`Deleted ${res.deleted} failed record(s).`);
+  refreshQueue();
+}
+
+async function clearChatQueue(chatId) {
+  const name = chatName(chatId);
+  const stats = (await api('/api/queue/stats/by-chat')).find(r => r.chatId === chatId);
+  const total = stats?.total ?? 0;
+  if (!total) {
+    alert(`No queue records for "${name}".`);
+    return;
+  }
+  if (!confirm(`Clear all ${total} queue record(s) for "${name}"?\n\nThis removes pending/queued/done/failed rows from the database. Downloaded files on disk are NOT deleted. Bootstrap history watermark is reset.`))
+    return;
+  const res = await api(`/api/queue/clear?chatId=${chatId}`, { method: 'POST' });
+  alert(`Cleared ${res.deleted} record(s) for "${name}".`);
+  refreshQueue();
+}
+
 // ─── Queue ────────────────────────────────────────────────────────────────────
 async function refreshQueue() {
   try {
@@ -382,6 +447,7 @@ async function refreshQueue() {
       Number($('#q-refill').value),
       Number($('#q-threads').value));
     applyParallelBootstrapUi(limits);
+    applyDownloadsPausedUi(!!limits.downloadsPaused);
   } catch (e) { console.warn(e); }
 }
 
@@ -460,6 +526,7 @@ function renderQueueByChat(rows) {
       <td>${fmtBytes(r.bytes)}</td>
       <td class="actions-cell">
         <button data-act="bootstrap" data-id="${r.chatId}">Bootstrap</button>
+        ${r.total ? `<button data-act="clear-queue" data-id="${r.chatId}">Clear queue</button>` : ''}
         ${statusCount(r.byStatus, 'failed') ? `<button data-act="retry-failed" data-id="${r.chatId}">Retry failed</button>` : ''}
       </td>`;
     tr.querySelector('[data-act="bootstrap"]').onclick = async (e) => {
@@ -468,6 +535,12 @@ function renderQueueByChat(rows) {
       catch (err) { alert(err.message); }
       finally { e.target.disabled = false; e.target.textContent = 'Bootstrap'; }
     };
+    tr.querySelector('[data-act="clear-queue"]')?.addEventListener('click', async (e) => {
+      e.target.disabled = true;
+      try { await clearChatQueue(r.chatId); }
+      catch (err) { alert(err.message); }
+      finally { e.target.disabled = false; }
+    });
     tr.querySelector('[data-act="retry-failed"]')?.addEventListener('click', async (e) => {
       e.target.disabled = true;
       try { await retryAllFailed(r.chatId); }
@@ -551,6 +624,25 @@ $('#btn-retry-all-failed').onclick = async () => {
   btn.disabled = true;
   try { await retryAllFailed(); }
   catch (err) { alert(err.message); }
+  finally { btn.disabled = false; }
+};
+$('#btn-delete-all-failed').onclick = async () => {
+  const btn = $('#btn-delete-all-failed');
+  btn.disabled = true;
+  try { await deleteAllFailed(); }
+  catch (err) { alert(err.message); }
+  finally { btn.disabled = false; }
+};
+$('#btn-toggle-downloads').onclick = async () => {
+  const btn = $('#btn-toggle-downloads');
+  const paused = btn.textContent.startsWith('Pause');
+  if (paused && !confirm('Pause downloads?\n\nQueued items stay in the database. In-progress items move back to queued.'))
+    return;
+  btn.disabled = true;
+  try {
+    await setDownloadsPaused(paused);
+    refreshQueue();
+  } catch (err) { alert(err.message); }
   finally { btn.disabled = false; }
 };
 

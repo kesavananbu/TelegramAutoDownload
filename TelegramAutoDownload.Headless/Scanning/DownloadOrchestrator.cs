@@ -50,6 +50,12 @@ public sealed class DownloadOrchestrator : BackgroundService
                     continue;
                 }
 
+                if (_host.ReadConfig().DownloadsPaused)
+                {
+                    await SafeDelay(IdlePollDelay, stop);
+                    continue;
+                }
+
                 var maxConcurrent = Math.Max(1, _host.ReadConfig().DownloadThreads);
                 var capacity = maxConcurrent - Volatile.Read(ref _inFlight);
                 if (capacity <= 0)
@@ -58,7 +64,9 @@ public sealed class DownloadOrchestrator : BackgroundService
                     continue;
                 }
 
-                var batch = await _repo.PickQueuedAsync(capacity).ConfigureAwait(false);
+                var cfg = _host.ReadConfig();
+                var monitoredChatIds = cfg.Chats.Where(c => c.Selected).Select(c => c.Id).ToList();
+                var batch = await _repo.PickQueuedAsync(capacity, monitoredChatIds).ConfigureAwait(false);
                 if (batch.Count == 0)
                 {
                     await SafeDelay(IdlePollDelay, stop);
@@ -93,6 +101,26 @@ public sealed class DownloadOrchestrator : BackgroundService
             {
                 await _repo.SetStatusAsync(row.chat_id, row.message_id, MediaStatus.Failed,
                     "Chat removed from config — cannot dispatch").ConfigureAwait(false);
+                return;
+            }
+
+            var downloadRoot = cfg.PathSaveFile;
+            if (string.IsNullOrWhiteSpace(downloadRoot))
+                downloadRoot = HeadlessPaths.DownloadsDir;
+
+            var existing = await ExistingDownloadValidator.CheckAsync(row, chat, downloadRoot, _repo, stop)
+                .ConfigureAwait(false);
+            if (existing != null)
+            {
+                var status = existing.MarkDone ? MediaStatus.Done : MediaStatus.Skipped;
+                await _repo.SetStatusAsync(row.chat_id, row.message_id, status, existing.Message)
+                    .ConfigureAwait(false);
+                if (existing.MarkDone)
+                    await _repo.SetDownloadedPathAsync(row.chat_id, row.message_id, existing.Path)
+                        .ConfigureAwait(false);
+                Log.Information(
+                    "Preflight skip chat={ChatId} msg={MsgId}: {Detail} → {Path}",
+                    row.chat_id, row.message_id, existing.Message, existing.Path);
                 return;
             }
 

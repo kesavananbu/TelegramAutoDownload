@@ -108,6 +108,55 @@ public sealed class MediaRepository
             """);
     }
 
+    /// <summary>Move all <c>in_progress</c> rows back to <c>queued</c> (used when pausing downloads).</summary>
+    public async Task<int> RequeueInProgressAsync(long? chatId = null)
+    {
+        await using var c = _db.Open();
+        if (chatId.HasValue)
+        {
+            return await c.ExecuteAsync(
+                """
+                UPDATE Media
+                   SET status     = 'queued',
+                       queued_at  = datetime('now')
+                 WHERE status = 'in_progress' AND chat_id = @chatId
+                """, new { chatId = chatId.Value });
+        }
+
+        return await c.ExecuteAsync(
+            """
+            UPDATE Media
+               SET status     = 'queued',
+                   queued_at  = datetime('now')
+             WHERE status = 'in_progress'
+            """);
+    }
+
+    /// <summary>Permanently remove failed rows from the queue database.</summary>
+    public async Task<int> DeleteAllFailedAsync(long? chatId = null)
+    {
+        await using var c = _db.Open();
+        if (chatId.HasValue)
+        {
+            return await c.ExecuteAsync(
+                "DELETE FROM Media WHERE status = 'failed' AND chat_id = @chatId",
+                new { chatId = chatId.Value });
+        }
+
+        return await c.ExecuteAsync("DELETE FROM Media WHERE status = 'failed'");
+    }
+
+    /// <summary>Remove all tracked media rows for a chat and reset its bootstrap watermark.</summary>
+    public async Task<int> ClearChatQueueAsync(long chatId)
+    {
+        await using var c = _db.Open();
+        var deleted = await c.ExecuteAsync(
+            "DELETE FROM Media WHERE chat_id = @chatId",
+            new { chatId });
+        await c.ExecuteAsync("DELETE FROM ChatScanState WHERE chat_id = @chatId", new { chatId });
+        return deleted;
+    }
+
     public async Task SetDownloadedPathAsync(long chatId, int messageId, string path)
     {
         await using var c = _db.Open();
@@ -121,23 +170,39 @@ public sealed class MediaRepository
     /// flipping them to <c>in_progress</c> and returning the claimed rows.
     /// Two callers cannot pick the same row — SQLite's <c>RETURNING</c> applies after the UPDATE.
     /// </summary>
-    public async Task<IReadOnlyList<MediaRecord>> PickQueuedAsync(int limit)
+    public async Task<IReadOnlyList<MediaRecord>> PickQueuedAsync(int limit, IReadOnlyList<long>? chatIds = null)
     {
         if (limit <= 0) return Array.Empty<MediaRecord>();
+        if (chatIds is { Count: 0 }) return Array.Empty<MediaRecord>();
+
         await using var c = _db.Open();
-        var rows = await c.QueryAsync<MediaRecord>(
-            """
-            UPDATE Media
-               SET status     = 'in_progress',
-                   started_at = datetime('now')
-             WHERE rowid IN (
-                SELECT rowid FROM Media
-                 WHERE status = 'queued'
-                 ORDER BY queued_at ASC, message_id ASC
-                 LIMIT @limit
-             )
-            RETURNING *
-            """, new { limit });
+        var sql = chatIds == null
+            ? """
+              UPDATE Media
+                 SET status     = 'in_progress',
+                     started_at = datetime('now')
+               WHERE rowid IN (
+                  SELECT rowid FROM Media
+                   WHERE status = 'queued'
+                   ORDER BY queued_at ASC, message_id ASC
+                   LIMIT @limit
+               )
+              RETURNING *
+              """
+            : """
+              UPDATE Media
+                 SET status     = 'in_progress',
+                     started_at = datetime('now')
+               WHERE rowid IN (
+                  SELECT rowid FROM Media
+                   WHERE status = 'queued'
+                     AND chat_id IN @chatIds
+                   ORDER BY queued_at ASC, message_id ASC
+                   LIMIT @limit
+               )
+              RETURNING *
+              """;
+        var rows = await c.QueryAsync<MediaRecord>(sql, new { limit, chatIds });
         return rows.AsList();
     }
 

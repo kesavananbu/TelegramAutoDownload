@@ -33,6 +33,12 @@ namespace TelegramAutoDownload.Models
         /// <summary>Cap when <see cref="AllowParallelBootstrap"/> is enabled (1–10).</summary>
         public int MaxParallelBootstraps { get; set; } = 3;
 
+        /// <summary>
+        /// When true, the download orchestrator does not pick new queued rows.
+        /// Persisted so pause survives container restarts.
+        /// </summary>
+        public bool DownloadsPaused { get; set; } = false;
+
         // Notification preferences — which events should trigger a Telegram bot message
         public bool NotifyOnStartup { get; set; } = true;
         public bool NotifyOnProgress { get; set; } = true;
