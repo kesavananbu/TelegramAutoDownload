@@ -164,6 +164,33 @@ namespace TelegramAutoDownload.Tests
         }
 
         [Fact]
+        public void ResolveDefaultRelativePath_SupportsAllLayouts()
+        {
+            FolderTemplateHelper.ResolveDefaultRelativePath(FolderLayoutMode.TypeFirst, "Videos", "MyChan")
+                .Should().Be("Videos/MyChan");
+            FolderTemplateHelper.ResolveDefaultRelativePath(FolderLayoutMode.ChatFirst, "Photos", "MyChan")
+                .Should().Be("MyChan/Photos");
+            FolderTemplateHelper.ResolveDefaultRelativePath(FolderLayoutMode.ChatCombined, "Files", "MyChan")
+                .Should().Be("MyChan");
+        }
+
+        [Fact]
+        public void ResolveDownloadDirectory_UsesLayoutWhenNoCustomTemplate()
+        {
+            var dir = FolderTemplateHelper.ResolveDownloadDirectory(
+                @"C:\dl", FolderLayoutMode.ChatFirst, null, "Videos", "Chan");
+            dir.Should().Be(Path.Combine(@"C:\dl", "Chan", "Videos"));
+        }
+
+        [Fact]
+        public void ResolveDownloadDirectory_CustomTemplateOverridesLayout()
+        {
+            var dir = FolderTemplateHelper.ResolveDownloadDirectory(
+                @"C:\dl", FolderLayoutMode.ChatCombined, "{Type}/{ChatName}", "Videos", "Chan");
+            dir.Should().Be(Path.Combine(@"C:\dl", "Videos", "Chan"));
+        }
+
+        [Fact]
         public void Resolve_ChatNameWithInvalidChars_IsSanitized()
         {
             var res = FolderTemplateHelper.Resolve("{ChatName}", "Videos", "My:Chat/Name", null);

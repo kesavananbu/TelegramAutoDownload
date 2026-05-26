@@ -15,7 +15,8 @@ namespace TelegramClient.Factory.FactoriesMessages
 {
     internal class Music : BaseMessage
     {
-        public Music(Client client, string pathFolderToSaveFiles) : base(client, pathFolderToSaveFiles)
+        public Music(Client client, string pathFolderToSaveFiles, FolderLayoutMode folderLayout = FolderLayoutMode.TypeFirst)
+            : base(client, pathFolderToSaveFiles, folderLayout)
         {
         }
 
@@ -38,7 +39,7 @@ namespace TelegramClient.Factory.FactoriesMessages
                 if (FileDownloadIndex.IsAlreadyDownloaded(document.ID))
                 {
                     // Verify the file still exists on disk — guards against stale index after reinstall / moved files
-                    var existingFile = GetPathOfDuplicateFile(fileName, document.size);
+                    var existingFile = GetPathOfDuplicateFile(chatDto, fileName, document.size);
                     if (existingFile != null)
                         return new ResultExecute(chatDto.Name) { IsSuccess = true, FileName = fileName, ErrorMessage = $"{fileName} already downloaded (id match)" };
                     // Stale index entry — file gone from disk, remove and re-download
@@ -46,7 +47,7 @@ namespace TelegramClient.Factory.FactoriesMessages
                 }
 
                 // Secondary dedup: filename + file size match on disk
-                var fileExist = GetPathOfDuplicateFile(fileName, document.size);
+                var fileExist = GetPathOfDuplicateFile(chatDto, fileName, document.size);
                 if (fileExist != null)
                 {
                     FileDownloadIndex.MarkDownloaded(document.ID);

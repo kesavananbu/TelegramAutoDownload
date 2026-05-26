@@ -167,7 +167,7 @@ namespace TelegramClient
         {
             _configParams = configParams;
             var chatIds = configParams.Chats?.Where(c => c.Selected).Select(c => c.Id).ToList() ?? new List<long>();
-            factoryService = new FactoryMessagesService(Client, configParams.PathSaveFile ?? string.Empty);
+            factoryService = new FactoryMessagesService(Client, configParams.PathSaveFile ?? string.Empty, configParams.FolderLayout);
             factoryService.OnProgress = OnProgress;
             factoryService.OnComplete = OnComplete;
             factoryService.RefreshMessage = RefreshMessageAsync;

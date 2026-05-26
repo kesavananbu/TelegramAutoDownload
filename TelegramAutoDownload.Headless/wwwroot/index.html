@@ -190,6 +190,16 @@
       <label>Download folder <input id="s-folder" type="text"></label>
       <button id="btn-save-folder">Save folder</button>
       <hr>
+      <label>Folder layout
+        <select id="s-folder-layout">
+          <option value="TypeFirst">Type first — Videos/Channel, Photos/Channel</option>
+          <option value="ChatFirst">Chat first — Channel/Videos, Channel/Photos</option>
+          <option value="ChatCombined">Combined — everything under Channel/</option>
+        </select>
+      </label>
+      <p class="hint">Per-chat custom folder templates override this layout.</p>
+      <button id="btn-save-folder-layout">Save layout</button>
+      <hr>
       <label>Parallel threads (1–10, default 3) <input id="s-threads" type="number" min="1" max="10"></label>
       <div id="settings-threads-warn" class="warn-box hidden"></div>
       <button id="btn-save-threads">Save threads</button>

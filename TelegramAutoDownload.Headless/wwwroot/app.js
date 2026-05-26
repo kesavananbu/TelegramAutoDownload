@@ -724,6 +724,7 @@ async function loadSettings() {
   try {
     const s = await api('/api/settings');
     $('#s-folder').value = s.downloadFolder || '';
+    if ($('#s-folder-layout')) $('#s-folder-layout').value = s.folderLayout || 'TypeFirst';
     $('#s-threads').value = s.downloadThreads || 3;
     applySettingsThreadWarning(Number($('#s-threads').value));
   } catch (e) { console.warn(e); }
@@ -733,6 +734,12 @@ $('#btn-save-folder').onclick = async () => {
   try { await api('/api/settings/download-folder', { method: 'POST', body: JSON.stringify({ folder: $('#s-folder').value }) }); alert('Saved.'); }
   catch (e) { alert(e.message); }
 };
+$('#btn-save-folder-layout')?.addEventListener('click', async () => {
+  try {
+    await api('/api/settings/folder-layout', { method: 'POST', body: JSON.stringify({ layout: $('#s-folder-layout').value }) });
+    alert('Folder layout saved. New downloads use the selected structure.');
+  } catch (e) { alert(e.message); }
+});
 $('#btn-save-threads').onclick = async () => {
   try { await api('/api/settings/threads', { method: 'POST', body: JSON.stringify({ threads: Number($('#s-threads').value) }) }); alert('Saved.'); }
   catch (e) { alert(e.message); }

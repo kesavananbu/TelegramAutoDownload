@@ -39,16 +39,16 @@ namespace TelegramClient.Factory.Service
         /// </summary>
         public Func<ChatDto, int, Task<Message?>>? RefreshMessage { get; set; }
 
-        public FactoryMessagesService(Client client, string pathFolderToSaveFiles)
+        public FactoryMessagesService(Client client, string pathFolderToSaveFiles, FolderLayoutMode folderLayout = FolderLayoutMode.TypeFirst)
         {
-            _messageTextFactory = new MessageTextFactoryService(client, pathFolderToSaveFiles);
+            _messageTextFactory = new MessageTextFactoryService(client, pathFolderToSaveFiles, folderLayout);
             messageTypes =
             [
-                new Messages(client, pathFolderToSaveFiles, _messageTextFactory),
-                new Videos(client, pathFolderToSaveFiles),
-                new Photos(client, pathFolderToSaveFiles),
-                new Files(client, pathFolderToSaveFiles),
-                new Music(client, pathFolderToSaveFiles)
+                new Messages(client, pathFolderToSaveFiles, _messageTextFactory, folderLayout),
+                new Videos(client, pathFolderToSaveFiles, folderLayout),
+                new Photos(client, pathFolderToSaveFiles, folderLayout),
+                new Files(client, pathFolderToSaveFiles, folderLayout),
+                new Music(client, pathFolderToSaveFiles, folderLayout)
             ];
         }
 

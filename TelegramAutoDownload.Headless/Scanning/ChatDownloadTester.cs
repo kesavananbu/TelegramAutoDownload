@@ -124,7 +124,7 @@ public sealed class ChatDownloadTester
         foreach (var (msg, rec) in samples)
         {
             ct.ThrowIfCancellationRequested();
-            items.Add(await ProbeItemAsync(app, chat, downloadRoot, msg, rec, ct).ConfigureAwait(false));
+            items.Add(await ProbeItemAsync(app, chat, downloadRoot, cfg.FolderLayout, msg, rec, ct).ConfigureAwait(false));
         }
 
         return BuildReport(chat, sampleSize, samples.Count, setupLogs, items, null);
@@ -191,6 +191,7 @@ public sealed class ChatDownloadTester
         TelegramApp app,
         ChatDto chat,
         string downloadRoot,
+        FolderLayoutMode folderLayout,
         Message msg,
         MediaRecord rec,
         CancellationToken ct)
@@ -228,7 +229,7 @@ public sealed class ChatDownloadTester
                 return Item(rec, "skipped", steps, "Below Min MB threshold");
         }
 
-        var preflight = await ExistingDownloadValidator.CheckAsync(rec, chat, downloadRoot, _repo, ct)
+        var preflight = await ExistingDownloadValidator.CheckAsync(rec, chat, downloadRoot, _repo, folderLayout, ct)
             .ConfigureAwait(false);
         if (preflight != null)
         {

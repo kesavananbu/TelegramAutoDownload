@@ -56,7 +56,7 @@ namespace TelegramClient.Models
         public string YtdlpQuality { get; set; } = YtdlpFormatHelper.HighestVideoQuality;
 
         /// <summary>
-        /// Custom folder template for this chat. Empty = use default layout ({Type}/{ChatName}/).
+        /// Custom folder template for this chat. Empty = use global <see cref="ConfigParams.FolderLayout"/>.
         /// Supported tokens: {Type}, {ChatName}, {Year}, {Month}, {Day}
         /// Example: "{ChatName}/{Year}-{Month}" → "MyChannel/2026-05/"
         /// </summary>

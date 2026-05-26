@@ -178,6 +178,15 @@ Enable this only if you want to receive a Telegram message when a download finis
                                      Height="32" IsReadOnly="True"/>
                         </DockPanel>
 
+                        <TextBlock Text="Folder layout" FontWeight="SemiBold" Margin="0,16,0,4"/>
+                        <ComboBox x:Name="cboFolderLayout" Height="32" Margin="0,0,0,4">
+                            <ComboBoxItem Content="Type first — Videos/Channel, Photos/Channel" Tag="TypeFirst"/>
+                            <ComboBoxItem Content="Chat first — Channel/Videos, Channel/Photos" Tag="ChatFirst"/>
+                            <ComboBoxItem Content="Combined — everything under Channel/" Tag="ChatCombined"/>
+                        </ComboBox>
+                        <TextBlock Text="Per-chat custom folder templates override this layout."
+                                   Foreground="#888" FontSize="11" Margin="0,0,0,4"/>
+
                         <TextBlock Text="Parallel Download Threads" FontWeight="SemiBold" Margin="0,16,0,4"/>
                         <DockPanel>
                             <TextBlock x:Name="tbThreadsValue" DockPanel.Dock="Right" Width="28"

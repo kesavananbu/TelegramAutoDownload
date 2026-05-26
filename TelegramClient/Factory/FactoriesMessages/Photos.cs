@@ -14,7 +14,8 @@ namespace TelegramClient.Factory.Factories
 {
     public class Photos : BaseMessage
     {
-        public Photos(Client client, string pathFolderToSaveFiles) : base(client, pathFolderToSaveFiles)
+        public Photos(Client client, string pathFolderToSaveFiles, FolderLayoutMode folderLayout = FolderLayoutMode.TypeFirst)
+            : base(client, pathFolderToSaveFiles, folderLayout)
         {
         }
         public string FileExtension => "jpg";
@@ -40,7 +41,7 @@ namespace TelegramClient.Factory.Factories
                 if (FileDownloadIndex.IsAlreadyDownloaded(document.ID))
                 {
                     // Verify the file still exists on disk — guards against stale index after reinstall / moved files
-                    var existingFile = GetPathOfDuplicateFile(fileName, document.size);
+                    var existingFile = GetPathOfDuplicateFile(chatDto, fileName, document.size);
                     if (existingFile != null)
                         return new ResultExecute(chatDto.Name) { IsSuccess = true, FileName = fileName, ErrorMessage = $"{fileName} already downloaded (id match)" };
                     // Stale index entry — file gone from disk, remove and re-download
@@ -48,7 +49,7 @@ namespace TelegramClient.Factory.Factories
                 }
 
                 // Secondary dedup: filename + file size match on disk
-                var fileExist = GetPathOfDuplicateFile(fileName, document.size);
+                var fileExist = GetPathOfDuplicateFile(chatDto, fileName, document.size);
                 if (fileExist != null)
                 {
                     FileDownloadIndex.MarkDownloaded(document.ID);
@@ -65,7 +66,7 @@ namespace TelegramClient.Factory.Factories
                 if (FileDownloadIndex.IsAlreadyDownloaded(photo.id))
                 {
                     // Verify the file still exists on disk — guards against stale index after reinstall / moved files
-                    var existingFile = GetPathOfDuplicateFile(fileName);
+                    var existingFile = GetPathOfDuplicateFile(chatDto, fileName);
                     if (existingFile != null)
                         return new ResultExecute(chatDto.Name) { IsSuccess = true, FileName = fileName, ErrorMessage = $"{fileName} already downloaded (id match)" };
                     // Stale index entry — file gone from disk, remove and re-download
@@ -73,7 +74,7 @@ namespace TelegramClient.Factory.Factories
                 }
 
                 // Secondary dedup: filename match on disk (photos have predictable names from photo.id)
-                var fileExist = GetPathOfDuplicateFile(fileName);
+                var fileExist = GetPathOfDuplicateFile(chatDto, fileName);
                 if (fileExist != null)
                 {
                     FileDownloadIndex.MarkDownloaded(photo.id);

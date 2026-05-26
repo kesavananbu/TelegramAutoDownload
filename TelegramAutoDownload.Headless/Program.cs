@@ -107,6 +107,7 @@ app.MapGet("/api/settings", (HeadlessHost host) =>
     {
         appIdConfigured = cfg.AppId != 0 && !string.IsNullOrEmpty(cfg.ApiHash),
         downloadFolder  = cfg.PathSaveFile,
+        folderLayout    = cfg.FolderLayout.ToString(),
         downloadThreads = cfg.DownloadThreads,
         scannerApiCapacity        = cfg.ScannerApiCapacity,
         scannerApiRefillPerSecond = cfg.ScannerApiRefillPerSecond,
@@ -125,6 +126,14 @@ app.MapPost("/api/settings/download-folder", (HeadlessHost host, FolderRequest r
 {
     host.UpdateSettings(c => { c.PathSaveFile = req.Folder; });
     return Results.Json(new { ok = true });
+});
+
+app.MapPost("/api/settings/folder-layout", (HeadlessHost host, FolderLayoutRequest req) =>
+{
+    if (!Enum.TryParse<FolderLayoutMode>(req.Layout, true, out var layout))
+        return Results.BadRequest(new { error = "Layout must be TypeFirst, ChatFirst, or ChatCombined." });
+    host.UpdateSettings(c => c.FolderLayout = layout);
+    return Results.Json(new { ok = true, folderLayout = layout.ToString() });
 });
 
 app.MapPost("/api/settings/threads", (HeadlessHost host, ThreadsRequest req) =>
@@ -509,6 +518,7 @@ internal record CodeRequest(string Code);
 internal record PasswordRequest(string Password);
 internal record CredentialsRequest(int AppId, string ApiHash);
 internal record FolderRequest(string Folder);
+internal record FolderLayoutRequest(string Layout);
 internal record ThreadsRequest(int Threads);
 internal record LimitsRequest(
     double ScannerApiCapacity,

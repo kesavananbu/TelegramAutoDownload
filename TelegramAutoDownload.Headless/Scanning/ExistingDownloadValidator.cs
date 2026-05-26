@@ -17,6 +17,7 @@ public static class ExistingDownloadValidator
         ChatDto chat,
         string? downloadRoot,
         MediaRepository repo,
+        FolderLayoutMode folderLayout = FolderLayoutMode.TypeFirst,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(downloadRoot) || !Directory.Exists(downloadRoot))
@@ -28,7 +29,7 @@ public static class ExistingDownloadValidator
             return new Result(true, row.downloaded_path, "File already on disk (recorded path)");
 
         var kind = MediaKindExtensions.ParseKind(row.kind);
-        var chatDir = ResolveChatDirectory(downloadRoot, chat, kind);
+        var chatDir = ResolveChatDirectory(downloadRoot, chat, kind, folderLayout);
         var onDisk = FindOnDisk(chatDir, row.file_name, row.size_bytes);
         if (onDisk == null)
             return null;
@@ -46,21 +47,13 @@ public static class ExistingDownloadValidator
     /// Resolves the directory where this chat's downloads for <paramref name="kind"/> are stored.
     /// Mirrors <see cref="TelegramClient.Factory.Base.BaseMessage.PathLocationFolder"/> layout logic.
     /// </summary>
-    public static string ResolveChatDirectory(string downloadRoot, ChatDto chat, MediaKind kind)
+    public static string ResolveChatDirectory(string downloadRoot, ChatDto chat, MediaKind kind, FolderLayoutMode folderLayout = FolderLayoutMode.TypeFirst)
     {
         var folderName = SanitizeChatFolderName(chat.Name);
         var typeFolder = KindToTypeFolder(kind);
 
-        var resolvedTemplate = FolderTemplateHelper.Resolve(
-            chat.FolderTemplate, typeFolder, folderName);
-        if (resolvedTemplate != null)
-        {
-            return Path.IsPathRooted(resolvedTemplate)
-                ? resolvedTemplate
-                : Path.Combine(downloadRoot, resolvedTemplate);
-        }
-
-        return Path.Combine(downloadRoot, typeFolder, folderName);
+        return FolderTemplateHelper.ResolveDownloadDirectory(
+            downloadRoot, folderLayout, chat.FolderTemplate, typeFolder, folderName);
     }
 
     internal static string KindToTypeFolder(MediaKind kind) => kind switch

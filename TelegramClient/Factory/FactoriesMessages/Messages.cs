@@ -15,7 +15,8 @@ namespace TelegramClient.Factory.Factories
     {
         private MessageTextFactoryService _messageTextFactory;
 
-        public Messages(Client client, string pathFolderToSaveFiles, MessageTextFactoryService messageTextFactory) : base(client, pathFolderToSaveFiles)
+        public Messages(Client client, string pathFolderToSaveFiles, MessageTextFactoryService messageTextFactory, FolderLayoutMode folderLayout = FolderLayoutMode.TypeFirst)
+            : base(client, pathFolderToSaveFiles, folderLayout)
         {
             _messageTextFactory = messageTextFactory;
         }

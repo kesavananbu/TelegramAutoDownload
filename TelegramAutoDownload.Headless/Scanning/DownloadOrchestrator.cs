@@ -110,7 +110,7 @@ public sealed class DownloadOrchestrator : BackgroundService
             if (string.IsNullOrWhiteSpace(downloadRoot))
                 downloadRoot = HeadlessPaths.DownloadsDir;
 
-            var existing = await ExistingDownloadValidator.CheckAsync(row, chat, downloadRoot, _repo, stop)
+            var existing = await ExistingDownloadValidator.CheckAsync(row, chat, downloadRoot, _repo, cfg.FolderLayout, stop)
                 .ConfigureAwait(false);
             if (existing != null)
             {

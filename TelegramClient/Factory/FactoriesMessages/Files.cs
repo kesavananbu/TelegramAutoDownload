@@ -15,7 +15,8 @@ namespace TelegramClient.Factory.Factories
     {
         public override MessageTypes TypeMessage => MessageTypes.Files;
 
-        public Files(Client client, string pathFolderToSaveFiles) : base(client, pathFolderToSaveFiles)
+        public Files(Client client, string pathFolderToSaveFiles, FolderLayoutMode folderLayout = FolderLayoutMode.TypeFirst)
+            : base(client, pathFolderToSaveFiles, folderLayout)
         {
         }
 
@@ -51,13 +52,13 @@ namespace TelegramClient.Factory.Factories
 
             if (FileDownloadIndex.IsAlreadyDownloaded(document.ID))
             {
-                var existingFile = GetPathOfDuplicateFile(fileName, document.size);
+                var existingFile = GetPathOfDuplicateFile(chatDto, fileName, document.size);
                 if (existingFile != null)
                     return new ResultExecute(chatDto.Name) { IsSuccess = true, FileName = fileName, ErrorMessage = $"{fileName} already downloaded (id match)" };
                 FileDownloadIndex.Remove(document.ID);
             }
 
-            var fileExist = GetPathOfDuplicateFile(fileName, document.size);
+            var fileExist = GetPathOfDuplicateFile(chatDto, fileName, document.size);
             if (fileExist != null)
             {
                 FileDownloadIndex.MarkDownloaded(document.ID);

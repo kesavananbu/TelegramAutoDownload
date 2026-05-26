@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Windows;
 using System.Windows.Navigation;
@@ -45,6 +46,7 @@ namespace TelegramAutoDownload
 
             // General
             txtDownloadPath.Text = _config.PathSaveFile ?? string.Empty;
+            SelectFolderLayout(_config.FolderLayout);
             sliderThreads.Value = Math.Max(1, Math.Min(10, _config.DownloadThreads));
             tbThreadsValue.Text = ((int)sliderThreads.Value).ToString();
 
@@ -117,6 +119,7 @@ namespace TelegramAutoDownload
             _config.BotToken = pbBotToken.Text;
             _config.ChatId = txtChatId.Text.Trim();
             _config.PathSaveFile = txtDownloadPath.Text.Trim();
+            _config.FolderLayout = ReadFolderLayout();
             _config.DownloadThreads = (int)sliderThreads.Value;
 
             // Notification preferences
@@ -182,6 +185,7 @@ namespace TelegramAutoDownload
                 BotToken          = pbBotToken.Text ?? string.Empty,
                 ChatId            = txtChatId.Text?.Trim() ?? string.Empty,
                 PathSaveFile      = txtDownloadPath.Text?.Trim() ?? string.Empty,
+                FolderLayout      = ReadFolderLayout(),
                 DownloadThreads   = Math.Max(1, Math.Min(10, (int)sliderThreads.Value)),
                 NotifyOnStartup   = chkNotifyStartup.IsChecked == true,
                 NotifyOnProgress  = chkNotifyProgress.IsChecked == true,
@@ -202,6 +206,7 @@ namespace TelegramAutoDownload
             _config.ChatId = imported.ChatId ?? string.Empty;
             if (!string.IsNullOrWhiteSpace(imported.PathSaveFile))
                 _config.PathSaveFile = imported.PathSaveFile;
+            _config.FolderLayout = imported.FolderLayout;
             if (imported.DownloadThreads >= 1 && imported.DownloadThreads <= 10)
                 _config.DownloadThreads = imported.DownloadThreads;
             _config.NotifyOnStartup = imported.NotifyOnStartup;
@@ -306,6 +311,27 @@ namespace TelegramAutoDownload
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe) { UseShellExecute = true });
 
             Application.Current.Shutdown();
+        }
+
+        private void SelectFolderLayout(FolderLayoutMode layout)
+        {
+            foreach (var item in cboFolderLayout.Items.OfType<System.Windows.Controls.ComboBoxItem>())
+            {
+                if (string.Equals(item.Tag as string, layout.ToString(), StringComparison.OrdinalIgnoreCase))
+                {
+                    cboFolderLayout.SelectedItem = item;
+                    return;
+                }
+            }
+            cboFolderLayout.SelectedIndex = 0;
+        }
+
+        private FolderLayoutMode ReadFolderLayout()
+        {
+            if (cboFolderLayout.SelectedItem is System.Windows.Controls.ComboBoxItem item &&
+                Enum.TryParse<FolderLayoutMode>(item.Tag as string, true, out var layout))
+                return layout;
+            return FolderLayoutMode.TypeFirst;
         }
     }
 }

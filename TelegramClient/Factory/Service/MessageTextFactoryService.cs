@@ -18,8 +18,8 @@ namespace TelegramClient.Factory.Service
         private readonly List<Type> _pluginTypes = [];
         public override MessageTypes TypeMessage => MessageTypes.Message;
 
-        public MessageTextFactoryService(Client client, string pathFolderToSaveFiles)
-            : base(client, pathFolderToSaveFiles)
+        public MessageTextFactoryService(Client client, string pathFolderToSaveFiles, FolderLayoutMode folderLayout = FolderLayoutMode.TypeFirst)
+            : base(client, pathFolderToSaveFiles, folderLayout)
         {
             // Use the absolute path next to the executable so the app works both
             // as a portable install (writable folder) and as a Program Files install

@@ -51,6 +51,11 @@ namespace TelegramAutoDownload.Models
         public string PathSaveFile { get; set; }
 
         /// <summary>
+        /// Default folder layout when a chat has no custom <see cref="ChatDto.FolderTemplate"/>.
+        /// </summary>
+        public FolderLayoutMode FolderLayout { get; set; } = FolderLayoutMode.TypeFirst;
+
+        /// <summary>
         /// Per-chat yt-dlp quality UI was removed; every chat always uses best video+audio.
         /// Call after deserializing config or importing settings so legacy JSON values are overwritten.
         /// </summary>

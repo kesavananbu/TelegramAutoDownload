@@ -18,6 +18,7 @@ namespace TelegramClient.Factory.Base
     {
         public Client Client { get; }
         public string PathFolderToSaveFiles { get; }
+        protected FolderLayoutMode FolderLayout { get; }
         public abstract MessageTypes TypeMessage { get; }
 
         /// <summary>
@@ -30,10 +31,11 @@ namespace TelegramClient.Factory.Base
         /// </summary>
         public Action<string, string, bool>? OnComplete { get; set; }
 
-        public BaseMessage(Client client, string pathFolderToSaveFiles)
+        public BaseMessage(Client client, string pathFolderToSaveFiles, FolderLayoutMode folderLayout = FolderLayoutMode.TypeFirst)
         {
             Client = client;
             PathFolderToSaveFiles = pathFolderToSaveFiles;
+            FolderLayout = folderLayout;
         }
         public abstract Task<ResultExecute> ExecuteAsync(Message message, ChatDto chatDto);
 
@@ -259,20 +261,14 @@ namespace TelegramClient.Factory.Base
             folderName = folderName.Replace('~', ' ');
             fileName = fileName.Replace('~', ' ');
 
-            // Custom folder template takes priority over the default {Type}/{ChatName} layout.
-            var resolvedTemplate = FolderTemplateHelper.Resolve(
-                chatDto.FolderTemplate, TypeMessage.ToString(), folderName);
-            if (resolvedTemplate != null)
-            {
-                // Absolute template (e.g. "C:\MyFolder") — use directly without basePath.
-                var fullDir = Path.IsPathRooted(resolvedTemplate)
-                    ? resolvedTemplate
-                    : Path.Combine(PathFolderToSaveFiles ?? string.Empty, resolvedTemplate);
-                Directory.CreateDirectory(fullDir);
-                return Path.Combine(fullDir, fileName);
-            }
-
-            return CreateFolderIfNotExist(folderName, fileName);
+            var fullDir = FolderTemplateHelper.ResolveDownloadDirectory(
+                PathFolderToSaveFiles ?? string.Empty,
+                FolderLayout,
+                chatDto.FolderTemplate,
+                TypeMessage.ToString(),
+                folderName);
+            Directory.CreateDirectory(fullDir);
+            return Path.Combine(fullDir, fileName);
         }
 
         public ResultExecute CheckDownloadPolicy(ChatDto chatDto, Message message)
@@ -320,56 +316,36 @@ namespace TelegramClient.Factory.Base
             }
         }
 
-        private string CreateFolderIfNotExist(string folderName, string fileName)
-        {
-            var fullPathOfFolder = PathFolderToSaveFiles == null ? $"{TypeMessage}" : $"{PathFolderToSaveFiles}/{TypeMessage}";
-            if (!Directory.Exists(fullPathOfFolder))
-            {
-                Directory.CreateDirectory(fullPathOfFolder);
-            }
-
-            var fullPath = $"{fullPathOfFolder}/{folderName}";
-            if (!Directory.Exists(fullPath))
-            {
-                Directory.CreateDirectory(fullPath);
-            }
-
-            return Path.Combine($"{fullPath}", $"{fileName}");
-        }
-
         /// <summary>
-        /// Scans all chat subfolders for a file with the same name and matching size.
+        /// Scans the chat folder for a file with the same name and matching size.
         /// Passing <paramref name="expectedSize"/> = 0 skips the size check (photos, etc.).
-        /// Returns the subfolder name where the duplicate was found, or null.
+        /// Returns the chat folder segment where the duplicate was found, or null.
         /// </summary>
-        protected string GetPathOfDuplicateFile(string fileName, long expectedSize = 0)
+        protected string? GetPathOfDuplicateFile(ChatDto chatDto, string fileName, long expectedSize = 0)
         {
             try
             {
-                var rootPathByType = $"{PathFolderToSaveFiles}/{TypeMessage}";
+                var chatDir = FolderTemplateHelper.ResolveDownloadDirectory(
+                    PathFolderToSaveFiles ?? string.Empty,
+                    FolderLayout,
+                    chatDto.FolderTemplate,
+                    TypeMessage.ToString(),
+                    chatDto.Name);
 
-                var folders = Directory.GetDirectories(rootPathByType);
-                foreach (var folder in folders)
+                if (!Directory.Exists(chatDir))
+                    return null;
+
+                foreach (var file in Directory.EnumerateFiles(chatDir, fileName, SearchOption.AllDirectories))
                 {
-                    var nameFolder = folder.Split("\\").LastOrDefault();
-                    var files = Directory.GetFiles(folder);
-                    foreach (var file in files)
+                    if (file.EndsWith(".part", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (expectedSize > 0)
                     {
-                        var nameFile = file.Split("\\").LastOrDefault();
-                        // Skip in-progress or interrupted download artifacts
-                        if (nameFile != null && nameFile.EndsWith(".part", StringComparison.OrdinalIgnoreCase)) continue;
-                        if (nameFile != fileName) continue;
-
-                        // When size is known, verify it matches to avoid false positives
-                        // (two different files that happen to share the same filename)
-                        if (expectedSize > 0)
-                        {
-                            var info = new FileInfo(file);
-                            if (info.Length != expectedSize) continue;
-                        }
-
-                        return $"{nameFolder}";
+                        var info = new FileInfo(file);
+                        if (info.Length != expectedSize) continue;
                     }
+
+                    var parent = Path.GetFileName(Path.GetDirectoryName(file) ?? string.Empty);
+                    return string.IsNullOrEmpty(parent) ? chatDto.Name : parent;
                 }
 
                 return null;
