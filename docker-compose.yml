@@ -1,11 +1,15 @@
+networks:
+    internal:
+      external: true
+
 services:
   telegram-auto-download:
     build: .
     image: telegram-auto-download:latest
     container_name: telegram_downloader
     restart: unless-stopped
-    ports:
-      - "8080:8080"
+    #ports:
+    #  - "8080:8080"
     environment:
       # Optional — if you'd rather not set credentials from the web UI on first run,
       # uncomment and put yours here (get them from https://my.telegram.org).
@@ -13,6 +17,10 @@ services:
       # API_HASH: "abcdef1234567890abcdef1234567890"
       DATA_DIR: /data
       DOWNLOADS_DIR: /downloads
+      TZ: Asia/Kolkata
     volumes:
       - /volume1/docker/telegram_downloader:/data
       - /volume1/homes/work/telegram_downloader:/downloads
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - internal
