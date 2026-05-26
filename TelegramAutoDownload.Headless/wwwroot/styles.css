@@ -15,6 +15,10 @@ main { padding: 1rem; max-width: 1400px; margin: 0 auto; }
 .tab.active { display: block; }
 
 .card { background: #fff; padding: 1.25rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.08); max-width: 480px; }
+.card.wide { max-width: none; margin-bottom: 1rem; }
+.limits-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .75rem; margin-bottom: .75rem; }
+button.inline { padding: .25rem .6rem; font-size: 12px; margin-left: .5rem; vertical-align: middle; }
+.error-cell { color: #8a1f1f; font-size: 12px; max-width: 280px; word-break: break-word; }
 .card h2 { margin-top: 0; }
 .step { margin-top: 1rem; }
 .step.hidden, .hidden { display: none; }
@@ -43,8 +47,10 @@ td input[type="checkbox"] { margin: 0 2px; }
 
 .pill { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
 .pill.queued { background: #eef2ff; color: #3949ab; }
-.pill.downloading { background: #fff7e6; color: #b46500; }
+.pill.pending { background: #f3f4f6; color: #4b5563; }
+.pill.in_progress, .pill.downloading { background: #fff7e6; color: #b46500; }
 .pill.done { background: #e7f7ec; color: #1f7a3a; }
-.pill.error { background: #fde8e8; color: #8a1f1f; }
+.pill.failed, .pill.error { background: #fde8e8; color: #8a1f1f; }
+.pill.skipped { background: #eef0f3; color: #5a6270; }
 .bar { display: inline-block; width: 120px; height: 8px; background: #e6e9ee; border-radius: 4px; overflow: hidden; vertical-align: middle; }
 .bar > span { display: block; height: 100%; background: #2563eb; transition: width .2s; }

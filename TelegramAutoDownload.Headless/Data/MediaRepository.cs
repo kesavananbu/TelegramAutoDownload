@@ -150,6 +150,19 @@ public sealed class MediaRepository
         return rows.AsList();
     }
 
+    public async Task<IReadOnlyList<MediaRecord>> ListByStatusAsync(string status, int limit = 50)
+    {
+        await using var c = _db.Open();
+        var rows = await c.QueryAsync<MediaRecord>(
+            """
+            SELECT * FROM Media
+             WHERE status = @status
+             ORDER BY COALESCE(completed_at, queued_at, discovered_at) DESC
+             LIMIT @limit
+            """, new { status, limit });
+        return rows.AsList();
+    }
+
     public async Task<long> CountAsync()
     {
         await using var c = _db.Open();

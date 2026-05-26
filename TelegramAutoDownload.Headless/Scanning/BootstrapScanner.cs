@@ -20,15 +20,15 @@ public sealed class BootstrapScanner
 {
     private readonly TelegramApp _app;
     private readonly MediaRepository _repo;
+    private readonly TokenBucketRateLimiter? _apiLimiter;
     private readonly int _pageSize;
-    private readonly int _pageDelayMs;
 
-    public BootstrapScanner(TelegramApp app, MediaRepository repo, int pageSize = 100, int pageDelayMs = 1000)
+    public BootstrapScanner(TelegramApp app, MediaRepository repo, TokenBucketRateLimiter? apiLimiter = null, int pageSize = 100)
     {
         _app = app;
         _repo = repo;
+        _apiLimiter = apiLimiter;
         _pageSize = pageSize;
-        _pageDelayMs = pageDelayMs;
     }
 
     public async Task<BootstrapResult> RunAsync(
@@ -52,6 +52,14 @@ public sealed class BootstrapScanner
 
         while (!ct.IsCancellationRequested)
         {
+            // Consume one token per API page so the user-configurable rate limit
+            // applies live without restarting the bootstrap.
+            if (_apiLimiter != null)
+            {
+                try { await _apiLimiter.WaitAsync(ct).ConfigureAwait(false); }
+                catch (OperationCanceledException) { break; }
+            }
+
             Messages_MessagesBase history;
             try
             {
@@ -92,12 +100,6 @@ public sealed class BootstrapScanner
             // heavy page does not stall pagination — same approach as SyncHistoryAsync.
             if (history.Messages.Length < _pageSize) break;
             offsetId = history.Messages.Select(m => m.ID).Min();
-
-            // Rate limit between pages — Phase 2 uses a fixed delay,
-            // Phase 3 wires in a hot-reloadable TokenBucketRateLimiter.
-            if (_pageDelayMs > 0)
-                try { await Task.Delay(_pageDelayMs, ct).ConfigureAwait(false); }
-                catch (OperationCanceledException) { break; }
         }
 
         await _repo.UpsertScanStateAsync(chat.Id, highestSeen, bootstrapComplete: !ct.IsCancellationRequested)

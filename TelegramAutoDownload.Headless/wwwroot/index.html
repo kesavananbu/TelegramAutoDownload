@@ -12,6 +12,7 @@
   <nav>
     <button data-tab="login"   class="active">Login</button>
     <button data-tab="chats"   disabled>Chats</button>
+    <button data-tab="queue"   disabled>Queue</button>
     <button data-tab="status"  disabled>Status</button>
     <button data-tab="settings" disabled>Settings</button>
   </nav>
@@ -76,6 +77,52 @@
           <th>History</th>
           <th>Sync</th>
         </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <!-- QUEUE -->
+  <section id="tab-queue" class="tab">
+    <div class="cards" id="queue-cards"></div>
+
+    <div class="card wide">
+      <h2>Rate limits</h2>
+      <p class="hint">Changes apply immediately to running bootstrap scans and download threads.</p>
+      <div class="limits-grid">
+        <label>Scanner burst capacity (1–100)
+          <input id="q-capacity" type="number" min="1" max="100" step="1">
+        </label>
+        <label>Scanner refill (req/sec, 0.1–50)
+          <input id="q-refill" type="number" min="0.1" max="50" step="0.1">
+        </label>
+        <label>Download threads (1–10)
+          <input id="q-threads" type="number" min="1" max="10" step="1">
+        </label>
+      </div>
+      <button id="btn-save-limits">Save limits</button>
+    </div>
+
+    <h3>Bootstrap jobs</h3>
+    <table id="bootstrap-table">
+      <thead>
+        <tr><th>Chat</th><th>Status</th><th>Discovered</th><th>Inserted</th><th>Started</th><th></th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <h3>Per-chat queue</h3>
+    <table id="queue-chat-table">
+      <thead>
+        <tr><th>Chat</th><th>Total</th><th>Pending</th><th>Queued</th><th>In progress</th><th>Done</th><th>Failed</th><th>Skipped</th><th>Bytes</th><th></th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <h3>Failed items <button id="btn-refresh-failed" class="inline">Refresh</button></h3>
+    <table id="failed-table">
+      <thead>
+        <tr><th>Chat</th><th>Msg</th><th>File</th><th>Kind</th><th>Size</th><th>Attempts</th><th>Error</th><th></th></tr>
       </thead>
       <tbody></tbody>
     </table>

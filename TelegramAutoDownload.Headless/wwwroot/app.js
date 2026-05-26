@@ -8,6 +8,7 @@ $$('header nav button').forEach(b => b.addEventListener('click', () => {
   $$('header nav button').forEach(x => x.classList.toggle('active', x === b));
   $$('.tab').forEach(t => t.classList.toggle('active', t.id === `tab-${b.dataset.tab}`));
   if (b.dataset.tab === 'chats')    loadChats();
+  if (b.dataset.tab === 'queue')    refreshQueue();
   if (b.dataset.tab === 'status')   refreshStatus();
   if (b.dataset.tab === 'settings') loadSettings();
 }));
@@ -188,6 +189,163 @@ function chatRow(c) {
 
 function escape(s) { return String(s ?? '').replace(/[&<>"]/g, ch => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[ch])); }
 
+function statusCount(byStatus, name) {
+  const row = (byStatus || []).find(x => x.status === name);
+  return row ? row.count : 0;
+}
+
+function chatName(chatId) {
+  const c = allChats.find(x => x.id === chatId);
+  return c ? c.name : `#${chatId}`;
+}
+
+// ─── Queue ────────────────────────────────────────────────────────────────────
+async function refreshQueue() {
+  try {
+    if (!allChats.length) {
+      try { allChats = await api('/api/chats'); } catch {}
+    }
+    const [stats, byChat, jobs, limits, failed] = await Promise.all([
+      api('/api/queue/stats'),
+      api('/api/queue/stats/by-chat'),
+      api('/api/bootstrap/jobs'),
+      api('/api/settings/limits'),
+      api('/api/queue/items?status=failed&limit=50'),
+    ]);
+
+    renderQueueCards(stats);
+    renderBootstrapJobs(jobs);
+    renderQueueByChat(byChat);
+    renderFailedItems(failed);
+
+    $('#q-capacity').value = limits.scannerApiCapacity ?? 5;
+    $('#q-refill').value   = limits.scannerApiRefillPerSecond ?? 1;
+    $('#q-threads').value  = limits.downloadThreads ?? 3;
+  } catch (e) { console.warn(e); }
+}
+
+function renderQueueCards(stats) {
+  const by = Object.fromEntries((stats.byStatus || []).map(x => [x.status, x]));
+  const cards = [
+    ['Total', stats.total, ''],
+    ['Pending', by.pending?.count || 0, 'pending'],
+    ['Queued', by.queued?.count || 0, 'queued'],
+    ['In progress', by.in_progress?.count || 0, 'in_progress'],
+    ['Done', by.done?.count || 0, 'done'],
+    ['Failed', by.failed?.count || 0, 'failed'],
+    ['Skipped', by.skipped?.count || 0, 'skipped'],
+    ['Storage', fmtBytes(stats.totalBytes), ''],
+  ];
+  const el = $('#queue-cards');
+  el.innerHTML = cards.map(([label, val]) =>
+    `<div class="metric"><span class="muted">${escape(label)}</span><strong>${escape(String(val))}</strong></div>`
+  ).join('');
+  if (stats.legacyDedupCount) {
+    el.innerHTML += `<div class="metric"><span class="muted">Legacy dedup</span><strong>${stats.legacyDedupCount}</strong></div>`;
+  }
+}
+
+function renderBootstrapJobs(jobs) {
+  const body = $('#bootstrap-table tbody');
+  body.innerHTML = '';
+  if (!jobs.length) {
+    body.innerHTML = '<tr><td colspan="6" class="muted">No bootstrap jobs running.</td></tr>';
+    return;
+  }
+  jobs.forEach(j => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escape(j.chatName || chatName(j.chatId))}</td>
+      <td>${escape(j.status)}${j.error ? `<br><small class="error-cell">${escape(j.error)}</small>` : ''}</td>
+      <td>${j.discovered}</td>
+      <td>${j.inserted}</td>
+      <td><small class="muted">${new Date(j.startedAt).toLocaleString()}</small></td>
+      <td>${j.done ? '' : `<button data-act="cancel" data-id="${j.chatId}">Cancel</button>`}</td>`;
+    tr.querySelector('[data-act="cancel"]')?.addEventListener('click', async (e) => {
+      e.target.disabled = true;
+      try { await api(`/api/chats/${j.chatId}/bootstrap`, { method: 'DELETE' }); refreshQueue(); }
+      catch (err) { alert(err.message); e.target.disabled = false; }
+    });
+    body.appendChild(tr);
+  });
+}
+
+function renderQueueByChat(rows) {
+  const body = $('#queue-chat-table tbody');
+  body.innerHTML = '';
+  const sorted = [...rows].sort((a, b) => b.total - a.total);
+  if (!sorted.length) {
+    body.innerHTML = '<tr><td colspan="10" class="muted">No tracked media yet — bootstrap a chat to populate the queue.</td></tr>';
+    return;
+  }
+  sorted.forEach(r => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escape(chatName(r.chatId))}</td>
+      <td>${r.total}</td>
+      <td>${statusCount(r.byStatus, 'pending')}</td>
+      <td>${statusCount(r.byStatus, 'queued')}</td>
+      <td>${statusCount(r.byStatus, 'in_progress')}</td>
+      <td>${statusCount(r.byStatus, 'done')}</td>
+      <td>${statusCount(r.byStatus, 'failed')}</td>
+      <td>${statusCount(r.byStatus, 'skipped')}</td>
+      <td>${fmtBytes(r.bytes)}</td>
+      <td><button data-act="bootstrap" data-id="${r.chatId}">Bootstrap</button></td>`;
+    tr.querySelector('[data-act="bootstrap"]').onclick = async (e) => {
+      e.target.disabled = true; e.target.textContent = '…';
+      try { await api(`/api/chats/${r.chatId}/bootstrap`, { method: 'POST' }); refreshQueue(); }
+      catch (err) { alert(err.message); }
+      finally { e.target.disabled = false; e.target.textContent = 'Bootstrap'; }
+    };
+    body.appendChild(tr);
+  });
+}
+
+function renderFailedItems(items) {
+  const body = $('#failed-table tbody');
+  body.innerHTML = '';
+  if (!items.length) {
+    body.innerHTML = '<tr><td colspan="8" class="muted">No failed items.</td></tr>';
+    return;
+  }
+  items.forEach(it => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escape(chatName(it.chatId))}</td>
+      <td>${it.messageId}</td>
+      <td>${escape(it.fileName || '—')}</td>
+      <td>${escape(it.kind || '')}</td>
+      <td>${fmtBytes(it.sizeBytes)}</td>
+      <td>${it.attempts ?? 0}</td>
+      <td class="error-cell">${escape(it.lastError || '')}</td>
+      <td><button data-act="retry">Retry</button></td>`;
+    tr.querySelector('[data-act="retry"]').onclick = async (e) => {
+      e.target.disabled = true;
+      try {
+        await api(`/api/queue/${it.chatId}/${it.messageId}/retry`, { method: 'POST' });
+        refreshQueue();
+      } catch (err) { alert(err.message); e.target.disabled = false; }
+    };
+    body.appendChild(tr);
+  });
+}
+
+$('#btn-save-limits').onclick = async () => {
+  try {
+    await api('/api/settings/limits', {
+      method: 'POST',
+      body: JSON.stringify({
+        scannerApiCapacity: Number($('#q-capacity').value),
+        scannerApiRefillPerSecond: Number($('#q-refill').value),
+        downloadThreads: Number($('#q-threads').value),
+      }),
+    });
+    alert('Limits saved — active scans pick them up immediately.');
+  } catch (e) { alert(e.message); }
+};
+
+$('#btn-refresh-failed').onclick = () => refreshQueue();
+
 // ─── Status ─────────────────────────────────────────────────────────────────
 async function refreshStatus() {
   try {
@@ -236,6 +394,7 @@ async function poll() {
     $('#conn').className = ls.loggedIn ? 'ok' : 'bad';
     if (ls.loggedIn) unlockTabs(true);
     if ($('#tab-status').classList.contains('active')) refreshStatus();
+    if ($('#tab-queue').classList.contains('active')) refreshQueue();
   } catch { $('#conn').className = 'bad'; }
 }
 

@@ -27,7 +27,18 @@ public sealed class MediaRecord
 /// <summary>
 /// Aggregate result for <c>SELECT status, COUNT, SUM(size) FROM Media …</c>.
 /// </summary>
-public sealed record MediaStatusCount(string status, long count, long total_bytes);
+public sealed class MediaStatusCount
+{
+    public string status { get; set; } = "";
+    public long   count { get; set; }
+    public long   total_bytes { get; set; }
+}
 
 /// <summary>Aggregate per-chat × per-status row.</summary>
-public sealed record ChatStatusCount(long chat_id, string status, long count, long total_bytes);
+public sealed class ChatStatusCount
+{
+    public long   chat_id { get; set; }
+    public string status { get; set; } = "";
+    public long   count { get; set; }
+    public long   total_bytes { get; set; }
+}

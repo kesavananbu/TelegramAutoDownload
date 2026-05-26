@@ -14,13 +14,15 @@ public sealed class BootstrapManager
 {
     private readonly HeadlessHost _host;
     private readonly MediaRepository _repo;
+    private readonly ScanRateLimits _limits;
 
     private readonly ConcurrentDictionary<long, BootstrapState> _running = new();
 
-    public BootstrapManager(HeadlessHost host, MediaRepository repo)
+    public BootstrapManager(HeadlessHost host, MediaRepository repo, ScanRateLimits limits)
     {
         _host = host;
         _repo = repo;
+        _limits = limits;
     }
 
     public void Start(ChatDto chat)
@@ -43,7 +45,7 @@ public sealed class BootstrapManager
         {
             try
             {
-                var scanner = new BootstrapScanner(_host.Telegram!, _repo);
+                var scanner = new BootstrapScanner(_host.Telegram!, _repo, _limits.TelegramApi);
                 var result = await scanner.RunAsync(chat,
                     p => state.UpdateProgress(p.Discovered, p.Inserted, p.Status),
                     cts.Token).ConfigureAwait(false);

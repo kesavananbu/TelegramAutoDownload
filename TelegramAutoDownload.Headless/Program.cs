@@ -26,6 +26,7 @@ builder.Services.AddSingleton<MediaRepository>();
 builder.Services.AddSingleton<MediaTracker>();
 builder.Services.AddSingleton<HeadlessHost>();
 builder.Services.AddSingleton<LoginCoordinator>();
+builder.Services.AddSingleton<ScanRateLimits>();
 builder.Services.AddSingleton<BootstrapManager>();
 builder.Services.AddHostedService<DownloadOrchestrator>();
 
@@ -99,6 +100,8 @@ app.MapGet("/api/settings", (HeadlessHost host) =>
         appIdConfigured = cfg.AppId != 0 && !string.IsNullOrEmpty(cfg.ApiHash),
         downloadFolder  = cfg.PathSaveFile,
         downloadThreads = cfg.DownloadThreads,
+        scannerApiCapacity        = cfg.ScannerApiCapacity,
+        scannerApiRefillPerSecond = cfg.ScannerApiRefillPerSecond,
     });
 });
 
@@ -119,6 +122,29 @@ app.MapPost("/api/settings/download-folder", (HeadlessHost host, FolderRequest r
 app.MapPost("/api/settings/threads", (HeadlessHost host, ThreadsRequest req) =>
 {
     host.UpdateSettings(c => { c.DownloadThreads = Math.Clamp(req.Threads, 1, 10); });
+    return Results.Json(new { ok = true });
+});
+
+app.MapGet("/api/settings/limits", (HeadlessHost host) =>
+{
+    var cfg = host.ReadConfig();
+    return Results.Json(new
+    {
+        scannerApiCapacity        = cfg.ScannerApiCapacity,
+        scannerApiRefillPerSecond = cfg.ScannerApiRefillPerSecond,
+        downloadThreads           = cfg.DownloadThreads,
+    });
+});
+
+app.MapPost("/api/settings/limits", (HeadlessHost host, LimitsRequest req) =>
+{
+    host.UpdateSettings(c =>
+    {
+        c.ScannerApiCapacity        = Math.Clamp(req.ScannerApiCapacity, 1.0, 100.0);
+        c.ScannerApiRefillPerSecond = Math.Clamp(req.ScannerApiRefillPerSecond, 0.1, 50.0);
+        if (req.DownloadThreads.HasValue)
+            c.DownloadThreads = Math.Clamp(req.DownloadThreads.Value, 1, 10);
+    });
     return Results.Json(new { ok = true });
 });
 
@@ -196,6 +222,23 @@ app.MapGet("/api/queue/stats/by-chat", async (MediaRepository repo) =>
             byStatus = g.Select(x => new { status = x.status, count = x.count, bytes = x.total_bytes }),
         })));
 
+app.MapGet("/api/queue/items", async (MediaRepository repo, string? status, int? limit) =>
+{
+    var s = string.IsNullOrWhiteSpace(status) ? "failed" : status.Trim().ToLowerInvariant();
+    var rows = await repo.ListByStatusAsync(s, Math.Clamp(limit ?? 50, 1, 200));
+    return Results.Json(rows.Select(r => new
+    {
+        chatId    = r.chat_id,
+        messageId = r.message_id,
+        fileName  = r.file_name,
+        kind      = r.kind,
+        sizeBytes = r.size_bytes,
+        status    = r.status,
+        lastError = r.last_error,
+        attempts  = r.attempts,
+    }));
+});
+
 // ─── Bootstrap (per-chat history sweep) ─────────────────────────────────────
 app.MapPost("/api/chats/{id:long}/bootstrap", (long id, HeadlessHost host, BootstrapManager mgr) =>
 {
@@ -266,6 +309,7 @@ internal record PasswordRequest(string Password);
 internal record CredentialsRequest(int AppId, string ApiHash);
 internal record FolderRequest(string Folder);
 internal record ThreadsRequest(int Threads);
+internal record LimitsRequest(double ScannerApiCapacity, double ScannerApiRefillPerSecond, int? DownloadThreads);
 
 internal record ChatPatch(
     bool?  Selected,

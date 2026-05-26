@@ -17,6 +17,12 @@ namespace TelegramAutoDownload.Models
 
         public int DownloadThreads { get; set; } = 3;
 
+        // Headless rate-limit settings (used by Phase 3 TokenBucketRateLimiter).
+        // Defaults are conservative: 1 history request / second, burst of 5.
+        // Old configs that lack these properties pick up the defaults.
+        public double ScannerApiCapacity { get; set; } = 5.0;
+        public double ScannerApiRefillPerSecond { get; set; } = 1.0;
+
         // Notification preferences — which events should trigger a Telegram bot message
         public bool NotifyOnStartup { get; set; } = true;
         public bool NotifyOnProgress { get; set; } = true;
