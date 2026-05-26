@@ -2,7 +2,7 @@ services:
   telegram-auto-download:
     build: .
     image: telegram-auto-download:latest
-    container_name: tad
+    container_name: telegram_downloader
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -14,5 +14,5 @@ services:
       DATA_DIR: /data
       DOWNLOADS_DIR: /downloads
     volumes:
-      - ./tad-data:/data
-      - ./tad-downloads:/downloads
+      - /volume1/docker/telegram_downloader:/data
+      - /volume1/homes/work/telegram_downloader:/downloads
