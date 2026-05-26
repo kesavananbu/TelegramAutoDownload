@@ -91,6 +91,8 @@ public sealed class BootstrapScanner
 
             if (history.Messages.Length == 0) break;
 
+            _app.CacheAccessHashesFromHistory(history);
+
             var messages = history.Messages.OfType<Message>().ToList();
             highestSeen = Math.Max(highestSeen, messages.DefaultIfEmpty().Max(m => m?.ID ?? 0));
 

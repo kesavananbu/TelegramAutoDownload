@@ -150,6 +150,8 @@ public sealed class ChatDownloadTester
                 continue;
             }
 
+            app.CacheAccessHashesFromHistory(history);
+
             if (history.Messages.Length == 0) break;
 
             foreach (var raw in history.Messages)
@@ -229,7 +231,9 @@ public sealed class ChatDownloadTester
         try
         {
             await _floodWait.WaitIfPausedAsync(ct).ConfigureAwait(false);
-            result = await app.ExecuteByMessageIdAsync(chat, msg.ID).ConfigureAwait(false);
+            // Message came from history scan — use it directly (fresh file refs, no re-fetch).
+            Step("message_source", true, $"Using msg {msg.ID} from history scan (skipping re-fetch).");
+            result = await app.ExecuteMessageAsync(chat, msg).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -239,11 +243,9 @@ public sealed class ChatDownloadTester
 
         if (result == null)
         {
-            Step("refetch", false, "Message could not be re-fetched from Telegram.");
-            return Item(rec, "failed", steps, "Message could not be re-fetched from Telegram");
+            Step("download", false, "Download pipeline returned no result.");
+            return Item(rec, "failed", steps, "Download pipeline returned no result");
         }
-
-        Step("refetch", true, "Message re-fetched OK.");
 
         if (result.IsSuccess && string.IsNullOrEmpty(result.ErrorMessage))
         {

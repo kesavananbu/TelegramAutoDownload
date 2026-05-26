@@ -190,8 +190,6 @@ namespace TelegramClient
         {
             try
             {
-                // Resolve the chat peer first (populates access_hash from dialogs when needed).
-                // messages.getMessages by ID alone does not work for group/channel history rows.
                 var peer = await ResolveInputPeerAsync(chatDto).ConfigureAwait(false);
                 if (peer == null)
                 {
@@ -202,22 +200,55 @@ namespace TelegramClient
 
                 if (peer is InputPeerChannel ch)
                 {
-                    var result = await Client.Channels_GetMessages(
-                        new InputChannel(ch.channel_id, ch.access_hash),
-                        new InputMessageID { id = msgId }).ConfigureAwait(false);
-                    var hit = result?.Messages?.OfType<Message>().FirstOrDefault(m => m.ID == msgId);
-                    if (hit != null) return hit;
+                    try
+                    {
+                        var result = await Client.Channels_GetMessages(
+                            new InputChannel(ch.channel_id, ch.access_hash),
+                            new InputMessageID { id = msgId }).ConfigureAwait(false);
+                        CacheAccessHashesFromHistory(result);
+                        var hit = result?.Messages?.OfType<Message>().FirstOrDefault(m => m.ID == msgId);
+                        if (hit != null) return hit;
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Debug(ex, "RefreshMessageAsync: Channels_GetMessages failed for msg {MsgId}", msgId);
+                    }
                 }
 
-                // Basic group, user DM, or channel fallback — fetch the page containing msgId.
+                // Same path bootstrap uses — fetch a window of messages with id ≤ msgId and pick the target.
+                // The single-message offset trick (add_offset:-1) is unreliable for some channel peers.
                 var history = await Client.Messages_GetHistory(
-                    peer, offset_id: msgId + 1, add_offset: -1, limit: 1).ConfigureAwait(false);
-                return history?.Messages?.OfType<Message>().FirstOrDefault(m => m.ID == msgId);
+                    peer, offset_id: msgId + 1, limit: 100).ConfigureAwait(false);
+                CacheAccessHashesFromHistory(history);
+                var fromHistory = history?.Messages?.OfType<Message>().FirstOrDefault(m => m.ID == msgId);
+                if (fromHistory != null) return fromHistory;
+
+                Log.Warning(
+                    "RefreshMessageAsync: msg {MsgId} not found in history window for chat {ChatName} ({ChatId})",
+                    msgId, chatDto.Name, chatDto.Id);
+                return null;
             }
             catch (Exception ex)
             {
                 Log.Warning(ex, "RefreshMessageAsync failed for msg {MsgId} in chat {ChatName}", msgId, chatDto.Name);
                 return null;
+            }
+        }
+
+        /// <summary>Updates cached access hashes from any history/channel-messages API response.</summary>
+        public void CacheAccessHashesFromHistory(Messages_MessagesBase? history)
+        {
+            if (history == null) return;
+            Dictionary<long, ChatBase>? chats = null;
+            if      (history is Messages_ChannelMessages cm) chats = cm.chats;
+            else if (history is Messages_MessagesSlice ms)   chats = ms.chats;
+            else if (history is Messages_Messages mm)        chats = mm.chats;
+
+            if (chats == null) return;
+            foreach (var kv in chats)
+            {
+                if (kv.Value is Channel ch) _accessHashes[ch.ID] = ch.access_hash;
+                else if (kv.Value is Chat grp) _accessHashes[grp.ID] = 0;
             }
         }
         private async Task Client_OnUpdates(UpdatesBase updates)
@@ -677,6 +708,16 @@ namespace TelegramClient
             if (factoryService == null) return null;
             var msg = await RefreshMessageAsync(chat, msgId).ConfigureAwait(false);
             if (msg == null) return null;
+            return await factoryService.ExecuteDirectAsync(msg, chat).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Dispatches a message already fetched from history/updates — skips the re-fetch step.
+        /// Use when the <see cref="Message"/> object is fresh (e.g. probe / bootstrap page).
+        /// </summary>
+        public async Task<ResultExecute?> ExecuteMessageAsync(ChatDto chat, Message msg)
+        {
+            if (factoryService == null) return null;
             return await factoryService.ExecuteDirectAsync(msg, chat).ConfigureAwait(false);
         }
 
