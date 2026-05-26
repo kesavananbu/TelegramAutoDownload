@@ -22,16 +22,18 @@ public sealed class DownloadOrchestrator : BackgroundService
 {
     private readonly MediaRepository _repo;
     private readonly HeadlessHost _host;
+    private readonly FloodWaitTracker _floodWait;
 
     private static readonly TimeSpan IdlePollDelay = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan BusyPollDelay = TimeSpan.FromMilliseconds(500);
 
     private int _inFlight = 0;
 
-    public DownloadOrchestrator(MediaRepository repo, HeadlessHost host)
+    public DownloadOrchestrator(MediaRepository repo, HeadlessHost host, FloodWaitTracker floodWait)
     {
         _repo = repo;
         _host = host;
+        _floodWait = floodWait;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stop)
@@ -83,6 +85,8 @@ public sealed class DownloadOrchestrator : BackgroundService
     {
         try
         {
+            await _floodWait.WaitIfPausedAsync(stop).ConfigureAwait(false);
+
             var cfg = _host.ReadConfig();
             var chat = cfg.Chats.FirstOrDefault(c => c.Id == row.chat_id);
             if (chat == null)
@@ -127,6 +131,18 @@ public sealed class DownloadOrchestrator : BackgroundService
             }
         }
         catch (OperationCanceledException) { /* shutdown */ }
+        catch (Exception ex) when (TelegramClient.FloodWaitHelper.TryParseSeconds(ex, out var floodSec))
+        {
+            _floodWait.Report(ex, $"download:chat{row.chat_id}:msg{row.message_id}");
+            Log.Warning("Orchestrator FLOOD_WAIT {Seconds}s — re-queuing chat {ChatId} msg {MsgId}",
+                floodSec, row.chat_id, row.message_id);
+            try
+            {
+                await _repo.SetStatusAsync(row.chat_id, row.message_id, MediaStatus.Queued,
+                    $"FLOOD_WAIT {floodSec}s — will retry").ConfigureAwait(false);
+            }
+            catch { /* next poll */ }
+        }
         catch (Exception ex)
         {
             Log.Warning(ex, "Orchestrator dispatch failed for chat {ChatId} msg {MsgId}", row.chat_id, row.message_id);

@@ -8,7 +8,7 @@ public sealed class ScanRateLimits
 {
     public TokenBucketRateLimiter TelegramApi { get; }
 
-    public ScanRateLimits(HeadlessHost host)
+    public ScanRateLimits(HeadlessHost host, FloodWaitTracker floodWait)
     {
         TelegramApi = new TokenBucketRateLimiter(() =>
         {
@@ -16,6 +16,6 @@ public sealed class ScanRateLimits
             return new RateLimitOptions(
                 Math.Max(1.0, cfg.ScannerApiCapacity),
                 Math.Max(0.1, cfg.ScannerApiRefillPerSecond));
-        });
+        }, floodWait);
     }
 }

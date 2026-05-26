@@ -16,14 +16,16 @@ namespace TelegramAutoDownload.Headless.Scanning;
 public sealed class TokenBucketRateLimiter
 {
     private readonly Func<RateLimitOptions> _readOptions;
+    private readonly FloodWaitTracker? _floodWait;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     private double _tokens;
     private DateTimeOffset _lastRefill = DateTimeOffset.UtcNow;
 
-    public TokenBucketRateLimiter(Func<RateLimitOptions> readOptions)
+    public TokenBucketRateLimiter(Func<RateLimitOptions> readOptions, FloodWaitTracker? floodWait = null)
     {
         _readOptions = readOptions;
+        _floodWait   = floodWait;
         _tokens = readOptions().Capacity;
     }
 
@@ -33,6 +35,9 @@ public sealed class TokenBucketRateLimiter
         while (true)
         {
             ct.ThrowIfCancellationRequested();
+
+            if (_floodWait != null)
+                await _floodWait.WaitIfPausedAsync(ct).ConfigureAwait(false);
 
             int waitMs;
             await _gate.WaitAsync(ct).ConfigureAwait(false);

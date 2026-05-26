@@ -23,6 +23,16 @@ namespace TelegramAutoDownload.Models
         public double ScannerApiCapacity { get; set; } = 5.0;
         public double ScannerApiRefillPerSecond { get; set; } = 1.0;
 
+        /// <summary>
+        /// When false (default), at most one bootstrap history scan runs globally.
+        /// When true, up to <see cref="MaxParallelBootstraps"/> may run concurrently
+        /// (all share the same API token bucket).
+        /// </summary>
+        public bool AllowParallelBootstrap { get; set; } = false;
+
+        /// <summary>Cap when <see cref="AllowParallelBootstrap"/> is enabled (1–10).</summary>
+        public int MaxParallelBootstraps { get; set; } = 3;
+
         // Notification preferences — which events should trigger a Telegram bot message
         public bool NotifyOnStartup { get; set; } = true;
         public bool NotifyOnProgress { get; set; } = true;

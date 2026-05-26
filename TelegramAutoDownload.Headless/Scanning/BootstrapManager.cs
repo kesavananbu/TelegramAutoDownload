@@ -15,19 +15,23 @@ public sealed class BootstrapManager
     private readonly HeadlessHost _host;
     private readonly MediaRepository _repo;
     private readonly ScanRateLimits _limits;
+    private readonly FloodWaitTracker _floodWait;
 
     private readonly ConcurrentDictionary<long, BootstrapState> _running = new();
 
-    public BootstrapManager(HeadlessHost host, MediaRepository repo, ScanRateLimits limits)
+    public BootstrapManager(HeadlessHost host, MediaRepository repo, ScanRateLimits limits, FloodWaitTracker floodWait)
     {
         _host = host;
         _repo = repo;
         _limits = limits;
+        _floodWait = floodWait;
     }
 
-    public void Start(ChatDto chat)
+    public void Start(ChatDto chat, bool overrideParallelGuard = false)
     {
         if (_host.Telegram == null) throw new InvalidOperationException("Not logged in.");
+
+        EnforceParallelGuard(chat, overrideParallelGuard);
 
         // Cancel any prior run for this chat
         if (_running.TryGetValue(chat.Id, out var existing))
@@ -45,7 +49,7 @@ public sealed class BootstrapManager
         {
             try
             {
-                var scanner = new BootstrapScanner(_host.Telegram!, _repo, _limits.TelegramApi);
+                var scanner = new BootstrapScanner(_host.Telegram!, _repo, _limits.TelegramApi, _floodWait);
                 var result = await scanner.RunAsync(chat,
                     p => state.UpdateProgress(p.Discovered, p.Inserted, p.Status),
                     cts.Token).ConfigureAwait(false);
@@ -79,6 +83,42 @@ public sealed class BootstrapManager
 
     public BootstrapJobView? Get(long chatId) =>
         _running.TryGetValue(chatId, out var s) ? s.ToView() : null;
+
+    public int ActiveCount => _running.Values.Count(s => !s.Done);
+
+    private void EnforceParallelGuard(ChatDto chat, bool overrideParallelGuard)
+    {
+        if (overrideParallelGuard)
+        {
+            Log.Warning("Bootstrap parallel guard overridden — starting {ChatName} while other scans may be active",
+                chat.Name);
+            return;
+        }
+
+        var cfg = _host.ReadConfig();
+        var activeOthers = _running.Values.Where(s => !s.Done && s.ChatId != chat.Id).ToList();
+
+        if (!cfg.AllowParallelBootstrap)
+        {
+            if (activeOthers.Count > 0)
+            {
+                var blocker = activeOthers[0];
+                throw new BootstrapConflictException(blocker.ChatName, blocker.ChatId);
+            }
+            return;
+        }
+
+        var max = Math.Clamp(cfg.MaxParallelBootstraps, 1, 10);
+        if (activeOthers.Count >= max)
+        {
+            var blocker = activeOthers[0];
+            throw new BootstrapConflictException(
+                blocker.ChatName,
+                blocker.ChatId,
+                $"Maximum parallel bootstraps ({max}) reached — \"{blocker.ChatName}\" is still running. " +
+                "Cancel a job, wait, or override.");
+        }
+    }
 
     private sealed class BootstrapState
     {

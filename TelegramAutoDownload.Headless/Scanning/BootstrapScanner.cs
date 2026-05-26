@@ -21,13 +21,20 @@ public sealed class BootstrapScanner
     private readonly TelegramApp _app;
     private readonly MediaRepository _repo;
     private readonly TokenBucketRateLimiter? _apiLimiter;
+    private readonly FloodWaitTracker? _floodWait;
     private readonly int _pageSize;
 
-    public BootstrapScanner(TelegramApp app, MediaRepository repo, TokenBucketRateLimiter? apiLimiter = null, int pageSize = 100)
+    public BootstrapScanner(
+        TelegramApp app,
+        MediaRepository repo,
+        TokenBucketRateLimiter? apiLimiter = null,
+        FloodWaitTracker? floodWait = null,
+        int pageSize = 100)
     {
         _app = app;
         _repo = repo;
         _apiLimiter = apiLimiter;
+        _floodWait = floodWait;
         _pageSize = pageSize;
     }
 
@@ -68,6 +75,16 @@ public sealed class BootstrapScanner
             }
             catch (Exception ex)
             {
+                if (_floodWait != null && FloodWaitHelper.TryParseSeconds(ex, out var floodSec))
+                {
+                    _floodWait.Report(ex, $"bootstrap:{chat.Name}");
+                    onProgress?.Invoke(new BootstrapProgress(chat.Id, discovered, inserted,
+                        $"⚠ FLOOD_WAIT — Telegram paused API for {floodSec}s…"));
+                    try { await _floodWait.WaitIfPausedAsync(ct).ConfigureAwait(false); }
+                    catch (OperationCanceledException) { break; }
+                    continue;
+                }
+
                 Log.Warning(ex, "Bootstrap: Messages_GetHistory failed for {ChatName} at offsetId={Offset}", chat.Name, offsetId);
                 return new BootstrapResult(chat.Id, discovered, inserted, ex.Message);
             }

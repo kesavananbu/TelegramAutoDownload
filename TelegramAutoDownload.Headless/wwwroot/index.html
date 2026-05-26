@@ -19,6 +19,8 @@
   <div id="conn"></div>
 </header>
 
+<div id="flood-banner" class="banner hidden" role="alert"></div>
+
 <main>
   <!-- LOGIN -->
   <section id="tab-login" class="tab active">
@@ -57,6 +59,13 @@
 
   <!-- CHATS -->
   <section id="tab-chats" class="tab">
+    <div class="card wide info-card">
+      <strong>How monitoring works</strong>
+      <p class="hint">
+        <strong>☑ Monitor</strong> — forward-only: captures <em>new</em> messages as they arrive. Does <em>not</em> scan old history.<br>
+        <strong>Bootstrap</strong> — rate-limited history scan → items queued in the database → downloaded gradually (safe for huge chats).
+      </p>
+    </div>
     <div class="toolbar">
       <button id="btn-refresh-chats">🔄 Refresh from Telegram</button>
       <input id="chat-search" type="search" placeholder="Filter…">
@@ -75,7 +84,7 @@
           <th>Filter (regex; ;)</th>
           <th>Folder template</th>
           <th>History</th>
-          <th>Sync</th>
+          <th title="Rate-limited history scan → queue">Bootstrap</th>
         </tr>
       </thead>
       <tbody></tbody>
@@ -88,18 +97,27 @@
 
     <div class="card wide">
       <h2>Rate limits</h2>
-      <p class="hint">Changes apply immediately to running bootstrap scans and download threads.</p>
+      <p class="hint">Changes apply immediately. Defaults (5 burst / 1 req·s⁻¹ / 3 threads) are safe for long-running use.</p>
+      <div id="limits-warnings" class="warn-box hidden"></div>
       <div class="limits-grid">
-        <label>Scanner burst capacity (1–100)
+        <label id="lbl-capacity">Scanner burst capacity (1–100)
           <input id="q-capacity" type="number" min="1" max="100" step="1">
         </label>
-        <label>Scanner refill (req/sec, 0.1–50)
+        <label id="lbl-refill">Scanner refill (req/sec, 0.1–50)
           <input id="q-refill" type="number" min="0.1" max="50" step="0.1">
         </label>
-        <label>Download threads (1–10)
+        <label id="lbl-threads">Download threads (1–10, default 3)
           <input id="q-threads" type="number" min="1" max="10" step="1">
         </label>
       </div>
+      <label class="parallel-option">
+        <input type="checkbox" id="q-parallel"> Allow parallel bootstrap scans
+        <span class="hint">Off by default (1 scan globally). All scans share the same API rate limiter.</span>
+      </label>
+      <label id="lbl-max-parallel" class="parallel-max hidden">Max parallel bootstraps (1–10)
+        <input id="q-max-parallel" type="number" min="1" max="10" step="1">
+      </label>
+      <div id="parallel-warn" class="warn-box hidden"></div>
       <button id="btn-save-limits">Save limits</button>
     </div>
 
@@ -151,7 +169,8 @@
       <label>Download folder <input id="s-folder" type="text"></label>
       <button id="btn-save-folder">Save folder</button>
       <hr>
-      <label>Parallel threads (1–10) <input id="s-threads" type="number" min="1" max="10"></label>
+      <label>Parallel threads (1–10, default 3) <input id="s-threads" type="number" min="1" max="10"></label>
+      <div id="settings-threads-warn" class="warn-box hidden"></div>
       <button id="btn-save-threads">Save threads</button>
     </div>
   </section>

@@ -26,6 +26,7 @@ builder.Services.AddSingleton<MediaRepository>();
 builder.Services.AddSingleton<MediaTracker>();
 builder.Services.AddSingleton<HeadlessHost>();
 builder.Services.AddSingleton<LoginCoordinator>();
+builder.Services.AddSingleton<FloodWaitTracker>();
 builder.Services.AddSingleton<ScanRateLimits>();
 builder.Services.AddSingleton<BootstrapManager>();
 builder.Services.AddHostedService<DownloadOrchestrator>();
@@ -125,7 +126,7 @@ app.MapPost("/api/settings/threads", (HeadlessHost host, ThreadsRequest req) =>
     return Results.Json(new { ok = true });
 });
 
-app.MapGet("/api/settings/limits", (HeadlessHost host) =>
+app.MapGet("/api/settings/limits", (HeadlessHost host, FloodWaitTracker flood, BootstrapManager mgr) =>
 {
     var cfg = host.ReadConfig();
     return Results.Json(new
@@ -133,6 +134,23 @@ app.MapGet("/api/settings/limits", (HeadlessHost host) =>
         scannerApiCapacity        = cfg.ScannerApiCapacity,
         scannerApiRefillPerSecond = cfg.ScannerApiRefillPerSecond,
         downloadThreads           = cfg.DownloadThreads,
+        allowParallelBootstrap    = cfg.AllowParallelBootstrap,
+        maxParallelBootstraps     = cfg.MaxParallelBootstraps,
+        activeBootstrapJobs       = mgr.ActiveCount,
+        defaults = new
+        {
+            scannerApiCapacity        = RateLimitThresholds.ScannerCapacityDefault,
+            scannerApiRefillPerSecond = RateLimitThresholds.ScannerRefillDefault,
+            downloadThreads           = RateLimitThresholds.DownloadThreadsDefault,
+            maxParallelBootstraps     = RateLimitThresholds.MaxParallelBootstrapsDefault,
+        },
+        thresholds = new
+        {
+            scannerCapacity = new { max = RateLimitThresholds.ScannerCapacityMax, warn = RateLimitThresholds.ScannerCapacityWarn, danger = RateLimitThresholds.ScannerCapacityDanger },
+            scannerRefill   = new { max = RateLimitThresholds.ScannerRefillMax, warn = RateLimitThresholds.ScannerRefillWarn, danger = RateLimitThresholds.ScannerRefillDanger },
+            downloadThreads = new { max = RateLimitThresholds.DownloadThreadsMax, warn = RateLimitThresholds.DownloadThreadsWarn, danger = RateLimitThresholds.DownloadThreadsDanger },
+        },
+        floodWait = ToFloodJson(flood.Snapshot()),
     });
 });
 
@@ -144,6 +162,10 @@ app.MapPost("/api/settings/limits", (HeadlessHost host, LimitsRequest req) =>
         c.ScannerApiRefillPerSecond = Math.Clamp(req.ScannerApiRefillPerSecond, 0.1, 50.0);
         if (req.DownloadThreads.HasValue)
             c.DownloadThreads = Math.Clamp(req.DownloadThreads.Value, 1, 10);
+        if (req.AllowParallelBootstrap.HasValue)
+            c.AllowParallelBootstrap = req.AllowParallelBootstrap.Value;
+        if (req.MaxParallelBootstraps.HasValue)
+            c.MaxParallelBootstraps = Math.Clamp(req.MaxParallelBootstraps.Value, 1, RateLimitThresholds.MaxParallelBootstrapsCap);
     });
     return Results.Json(new { ok = true });
 });
@@ -189,11 +211,10 @@ app.MapPatch("/api/chats/{id:long}", (long id, HeadlessHost host, ChatPatch patc
     catch (KeyNotFoundException ex) { return Results.NotFound(new { error = ex.Message }); }
 });
 
-app.MapPost("/api/chats/{id:long}/sync", async (long id, HeadlessHost host) =>
-{
-    _ = Task.Run(() => host.SyncHistoryAsync(id, msg => Log.Information("Sync: {Status}", msg)));
-    return Results.Json(new { ok = true, message = "Sync started — watch /api/downloads for progress." });
-});
+app.MapPost("/api/chats/{id:long}/sync", (long id, HeadlessHost host, BootstrapManager mgr, BootstrapRequest? req) =>
+    TryStartBootstrap(id, host, mgr, req, requireMonitored: true));
+
+app.MapGet("/api/flood-wait", (FloodWaitTracker flood) => Results.Json(ToFloodJson(flood.Snapshot())));
 
 // ─── Queue / persisted-media stats (Phase 1: visibility only) ───────────────
 app.MapGet("/api/queue/stats", async (MediaRepository repo) =>
@@ -240,16 +261,8 @@ app.MapGet("/api/queue/items", async (MediaRepository repo, string? status, int?
 });
 
 // ─── Bootstrap (per-chat history sweep) ─────────────────────────────────────
-app.MapPost("/api/chats/{id:long}/bootstrap", (long id, HeadlessHost host, BootstrapManager mgr) =>
-{
-    var cfg = host.ReadConfig();
-    var chat = cfg.Chats.FirstOrDefault(c => c.Id == id);
-    if (chat == null) return Results.NotFound(new { error = "Chat not found — refresh the chat list first." });
-    if (host.Telegram == null) return Results.BadRequest(new { error = "Not logged in." });
-    try { mgr.Start(chat); }
-    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
-    return Results.Json(new { ok = true });
-});
+app.MapPost("/api/chats/{id:long}/bootstrap", (long id, HeadlessHost host, BootstrapManager mgr, BootstrapRequest? req) =>
+    TryStartBootstrap(id, host, mgr, req, requireMonitored: false));
 
 app.MapDelete("/api/chats/{id:long}/bootstrap", (long id, BootstrapManager mgr) =>
     Results.Json(new { cancelled = mgr.Cancel(id) }));
@@ -286,7 +299,7 @@ app.MapGet("/api/downloads", (HeadlessHost host) =>
         at     = d.UpdatedAt,
     })));
 
-app.MapGet("/api/status", (HeadlessHost host, LoginCoordinator login) =>
+app.MapGet("/api/status", (HeadlessHost host, LoginCoordinator login, FloodWaitTracker flood) =>
 {
     var cfg = host.ReadConfig();
     return Results.Json(new
@@ -297,10 +310,60 @@ app.MapGet("/api/status", (HeadlessHost host, LoginCoordinator login) =>
         monitoredChats  = cfg.Chats.Count(c => c.Selected),
         totalChats      = cfg.Chats.Count,
         activeDownloads = host.SnapshotDownloads().Count(d => d.Status == DownloadStatus.Downloading),
+        floodWait       = ToFloodJson(flood.Snapshot()),
     });
 });
 
 await app.RunAsync();
+
+static IResult TryStartBootstrap(long id, HeadlessHost host, BootstrapManager mgr, BootstrapRequest? req, bool requireMonitored)
+{
+    var cfg = host.ReadConfig();
+    var chat = cfg.Chats.FirstOrDefault(c => c.Id == id);
+    if (chat == null) return Results.NotFound(new { error = "Chat not found — refresh the chat list first." });
+    if (host.Telegram == null) return Results.BadRequest(new { error = "Not logged in." });
+    if (requireMonitored && !chat.Selected)
+        return Results.BadRequest(new { error = "Enable monitoring first — checking the box only captures new messages; Bootstrap scans history through the queue." });
+
+    var overrideParallel = req?.OverrideParallel ?? false;
+    try
+    {
+        mgr.Start(chat, overrideParallel);
+    }
+    catch (BootstrapConflictException ex)
+    {
+        return Results.Json(new
+        {
+            error         = ex.Message,
+            conflict      = true,
+            canOverride   = true,
+            blockingChat  = ex.BlockingChatName,
+            blockingChatId = ex.BlockingChatId,
+        }, statusCode: StatusCodes.Status409Conflict);
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+
+    return Results.Json(new
+    {
+        ok = true,
+        overridden = overrideParallel,
+        message = overrideParallel
+            ? "Bootstrap started (parallel guard overridden) — scans share the same rate limiter. Watch the Queue tab."
+            : "Bootstrap started — history is scanned rate-limited, queued in the database, then downloaded by the orchestrator. Watch the Queue tab.",
+    });
+}
+
+static object ToFloodJson(FloodWaitSnapshot s) => new
+{
+    active           = s.Active,
+    pausedUntil      = s.Active ? s.PausedUntil : (DateTimeOffset?)null,
+    remainingSeconds = s.RemainingSeconds,
+    source           = s.Source,
+    message          = s.Message,
+};
 
 // ─── DTOs ────────────────────────────────────────────────────────────────────
 internal record PhoneRequest(string Phone);
@@ -309,7 +372,14 @@ internal record PasswordRequest(string Password);
 internal record CredentialsRequest(int AppId, string ApiHash);
 internal record FolderRequest(string Folder);
 internal record ThreadsRequest(int Threads);
-internal record LimitsRequest(double ScannerApiCapacity, double ScannerApiRefillPerSecond, int? DownloadThreads);
+internal record LimitsRequest(
+    double ScannerApiCapacity,
+    double ScannerApiRefillPerSecond,
+    int? DownloadThreads,
+    bool? AllowParallelBootstrap,
+    int? MaxParallelBootstraps);
+
+internal record BootstrapRequest(bool OverrideParallel = false);
 
 internal record ChatPatch(
     bool?  Selected,
