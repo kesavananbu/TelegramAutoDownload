@@ -8,6 +8,7 @@ services:
     image: telegram-auto-download:latest
     container_name: telegram_downloader
     restart: unless-stopped
+    user: "1029:100"
     #ports:
     #  - "8080:8080"
     environment:
