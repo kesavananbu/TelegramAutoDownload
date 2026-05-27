@@ -51,10 +51,10 @@ public sealed class MediaRepository
             """
             INSERT OR IGNORE INTO Media
                 (chat_id, message_id, document_id, url_hash, kind, size_bytes, date_utc,
-                 file_name, status, attempts, discovered_at)
+                 file_name, status, attempts, last_error, discovered_at)
             VALUES
                 (@chat_id, @message_id, @document_id, @url_hash, @kind, @size_bytes, @date_utc,
-                 @file_name, @status, 0, datetime('now'))
+                 @file_name, @status, 0, @last_error, datetime('now'))
             """, r);
         return rows == 1;
     }
@@ -105,6 +105,32 @@ public sealed class MediaRepository
                    queued_at  = datetime('now'),
                    last_error = NULL
              WHERE status = 'failed'
+            """);
+    }
+
+    /// <summary>Move all <c>skipped</c> rows back to <c>queued</c>. Optionally scoped to one chat.</summary>
+    public async Task<int> RequeueAllSkippedAsync(long? chatId = null)
+    {
+        await using var c = _db.Open();
+        if (chatId.HasValue)
+        {
+            return await c.ExecuteAsync(
+                """
+                UPDATE Media
+                   SET status     = 'queued',
+                       queued_at  = datetime('now'),
+                       last_error = NULL
+                 WHERE status = 'skipped' AND chat_id = @chatId
+                """, new { chatId = chatId.Value });
+        }
+
+        return await c.ExecuteAsync(
+            """
+            UPDATE Media
+               SET status     = 'queued',
+                   queued_at  = datetime('now'),
+                   last_error = NULL
+             WHERE status = 'skipped'
             """);
     }
 
@@ -283,6 +309,17 @@ public sealed class MediaRepository
         return await c.ExecuteScalarAsync<int>(
             "SELECT COALESCE(last_scanned_msg_id, 0) FROM ChatScanState WHERE chat_id = @chatId",
             new { chatId });
+    }
+
+    public async Task<IReadOnlyList<ChatScanStateRecord>> GetAllScanStatesAsync()
+    {
+        await using var c = _db.Open();
+        var rows = await c.QueryAsync<ChatScanStateRecord>(
+            """
+            SELECT chat_id, last_scanned_msg_id, last_scanned_date, bootstrap_complete, last_forward_at
+              FROM ChatScanState
+            """);
+        return rows.AsList();
     }
 
     // ── LegacyDedup ───────────────────────────────────────────────────────────

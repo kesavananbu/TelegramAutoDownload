@@ -42,3 +42,12 @@ public sealed class ChatStatusCount
     public long   count { get; set; }
     public long   total_bytes { get; set; }
 }
+
+public sealed class ChatScanStateRecord
+{
+    public long   chat_id { get; set; }
+    public int    last_scanned_msg_id { get; set; }
+    public string? last_scanned_date { get; set; }
+    public int    bootstrap_complete { get; set; }
+    public string? last_forward_at { get; set; }
+}

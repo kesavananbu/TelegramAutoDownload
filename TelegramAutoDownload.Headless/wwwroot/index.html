@@ -93,6 +93,7 @@
           <th>Filter (regex; ;)</th>
           <th>Folder template</th>
           <th>History</th>
+          <th title="Last bootstrap / history scan">Last sync</th>
           <th title="Rate-limited history scan → queue">Bootstrap</th>
           <th title="Probe download newest 10 media">Test</th>
         </tr>
@@ -149,7 +150,19 @@
     <h3>Per-chat queue</h3>
     <table id="queue-chat-table">
       <thead>
-        <tr><th>Chat</th><th>Total</th><th>Pending</th><th>Queued</th><th>In progress</th><th>Done</th><th>Failed</th><th>Skipped</th><th>Bytes</th><th></th></tr>
+        <tr><th>Chat</th><th>Total</th><th>Pending</th><th>Queued</th><th>In progress</th><th>Done</th><th>Failed</th><th>Skipped</th><th>Last sync</th><th>Bytes</th><th></th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <h3>Skipped items
+      <button id="btn-refresh-skipped" class="inline">Refresh</button>
+      <button id="btn-retry-all-skipped" class="inline">Retry all skipped</button>
+    </h3>
+    <p class="hint">Skipped is usually intentional: already on disk, duplicate, sticker/voice, type disabled (V/P/M/F off), below Min MB, or regex filter. Hover a row for the reason.</p>
+    <table id="skipped-table">
+      <thead>
+        <tr><th>Chat</th><th>Msg</th><th>File</th><th>Kind</th><th>Size</th><th>Reason</th><th></th></tr>
       </thead>
       <tbody></tbody>
     </table>

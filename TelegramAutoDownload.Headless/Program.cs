@@ -319,15 +319,26 @@ app.MapGet("/api/queue/stats", async (MediaRepository repo) =>
 });
 
 app.MapGet("/api/queue/stats/by-chat", async (MediaRepository repo) =>
-    Results.Json((await repo.GetPerChatStatusCountsAsync())
+{
+    var scanMap = (await repo.GetAllScanStatesAsync())
+        .ToDictionary(s => s.chat_id, s => s);
+    return Results.Json((await repo.GetPerChatStatusCountsAsync())
         .GroupBy(r => r.chat_id)
-        .Select(g => new
+        .Select(g =>
         {
-            chatId = g.Key,
-            total  = g.Sum(x => x.count),
-            bytes  = g.Sum(x => x.total_bytes),
-            byStatus = g.Select(x => new { status = x.status, count = x.count, bytes = x.total_bytes }),
-        })));
+            scanMap.TryGetValue(g.Key, out var scan);
+            return new
+            {
+                chatId = g.Key,
+                total  = g.Sum(x => x.count),
+                bytes  = g.Sum(x => x.total_bytes),
+                byStatus = g.Select(x => new { status = x.status, count = x.count, bytes = x.total_bytes }),
+                lastScannedMsgId = scan?.last_scanned_msg_id ?? 0,
+                lastScannedDate  = scan?.last_scanned_date,
+                bootstrapComplete = scan?.bootstrap_complete == 1,
+            };
+        }));
+});
 
 app.MapGet("/api/queue/items", async (MediaRepository repo, string? status, int? limit) =>
 {
@@ -398,6 +409,12 @@ app.MapPost("/api/queue/{chatId:long}/{messageId:int}/retry",
 app.MapPost("/api/queue/retry-failed", async (MediaRepository repo, long? chatId) =>
 {
     var requeued = await repo.RequeueAllFailedAsync(chatId);
+    return Results.Json(new { ok = true, requeued });
+});
+
+app.MapPost("/api/queue/retry-skipped", async (MediaRepository repo, long? chatId) =>
+{
+    var requeued = await repo.RequeueAllSkippedAsync(chatId);
     return Results.Json(new { ok = true, requeued });
 });
 

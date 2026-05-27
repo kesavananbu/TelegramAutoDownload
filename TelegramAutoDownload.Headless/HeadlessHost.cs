@@ -91,7 +91,7 @@ public sealed class HeadlessHost
     {
         app.OnEnqueued = (chat, msgId, name) => Upsert(chat, msgId, name, "", DownloadStatus.Queued, 0, 0, 0, null);
         app.OnStarted  = (chat, msgId)        => UpsertStarted(chat, msgId);
-        app.OnSkipped  = (chat, msgId)        => Remove(chat, msgId);
+        app.OnSkipped  = (chat, msgId, _) => Remove(chat, msgId);
         app.OnProgress = (chat, file, plugin, percent, done, total) =>
             UpsertByName(chat, file, plugin, DownloadStatus.Downloading, percent, done, total, null);
         app.OnComplete = (chat, file, success) =>

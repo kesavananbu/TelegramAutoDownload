@@ -54,7 +54,10 @@ public static class MessageMapper
         rec.kind        = kind.ToDbValue();
         rec.file_name   = GetDocumentFileName(doc, msg.ID);
         if (isSticker || isVoice)
+        {
             rec.status = MediaStatus.Skipped.ToDbValue();
+            rec.last_error = isSticker ? "Sticker (not downloaded)" : "Voice message (not downloaded)";
+        }
         return rec;
     }
 

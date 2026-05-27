@@ -100,7 +100,7 @@ namespace TelegramAutoDownload
             };
             telegram.OnComplete = (chatName, fileName, success) =>
                 DownloadProgressService.Instance.CompleteDownload(chatName, fileName, success);
-            telegram.OnSkipped = (chatName, msgId) =>
+            telegram.OnSkipped = (chatName, msgId, _) =>
                 DownloadProgressService.Instance.SkipDownload(chatName, msgId);
 
             // Wire retry callback so the UI can show a Retry button on failed items

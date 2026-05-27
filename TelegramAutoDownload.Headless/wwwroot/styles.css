@@ -22,7 +22,10 @@ button.inline.danger { background: #fff; border: 1px solid #e64545; color: #a22;
 button.inline.danger:hover { background: #fde8e8; }
 #btn-toggle-downloads.primary { background: #29c46f; }
 #btn-toggle-downloads.primary:hover { background: #22a85c; }
-.error-cell { color: #8a1f1f; font-size: 12px; max-width: 280px; word-break: break-word; }
+.error-cell { color: #8a1f1f; font-size: 12px; max-width: 280px; word-break: break-word; cursor: help; }
+.sync-stale { color: #a22; font-weight: 600; white-space: nowrap; font-size: 12px; }
+.sync-ok { color: #1a7f4c; white-space: nowrap; font-size: 12px; }
+.skip-count { cursor: help; }
 .info-card { margin-bottom: 1rem; }
 .info-card p { margin: .5rem 0 0; }
 

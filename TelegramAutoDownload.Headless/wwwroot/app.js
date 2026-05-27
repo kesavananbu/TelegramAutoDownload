@@ -253,6 +253,23 @@ $('#btn-logout').onclick = async () => {
 
 // ─── Chats ──────────────────────────────────────────────────────────────────
 let allChats = [];
+let queueByChat = {};
+
+function formatLastSync(row) {
+  if (!row?.lastScannedDate) {
+    return { text: 'Never', title: 'No bootstrap scan recorded — run Bootstrap to backfill history', stale: true };
+  }
+  const d = new Date(row.lastScannedDate.includes('T') ? row.lastScannedDate : row.lastScannedDate.replace(' ', 'T') + 'Z');
+  const ageMs = Date.now() - d.getTime();
+  const stale = ageMs > 24 * 3600 * 1000;
+  const msgId = row.lastScannedMsgId ? ` · msg #${row.lastScannedMsgId}` : '';
+  const complete = row.bootstrapComplete ? ' · complete' : ' · partial';
+  return {
+    text: d.toLocaleString() + msgId,
+    title: `Last history scan${complete}. Run Bootstrap again to queue posts added since then.`,
+    stale,
+  };
+}
 
 async function loadChats() {
   try { allChats = await api('/api/chats'); renderChats(); }
@@ -269,8 +286,11 @@ $('#btn-refresh-chats').onclick = async () => {
 
 $('#chat-search').oninput = () => renderChats();
 
-function renderChats() {
+async function renderChats() {
   const q = $('#chat-search').value.trim().toLowerCase();
+  try {
+    queueByChat = Object.fromEntries((await api('/api/queue/stats/by-chat')).map(r => [r.chatId, r]));
+  } catch { /* queue stats optional until first bootstrap */ }
   const rows = allChats
     .filter(c => !q || (c.name + ' ' + c.username).toLowerCase().includes(q))
     .sort((a, b) => Number(b.selected) - Number(a.selected) || a.name.localeCompare(b.name));
@@ -283,6 +303,7 @@ function renderChats() {
 function chatRow(c) {
   const tr = document.createElement('tr');
   if (c.selected) tr.classList.add('selected');
+  const sync = formatLastSync(queueByChat[c.id]);
   tr.innerHTML = `
     <td><input type="checkbox" data-k="selected" ${c.selected ? 'checked' : ''}></td>
     <td>${escape(c.name)}<br><small class="muted">${escape(c.username || '')}</small></td>
@@ -304,7 +325,8 @@ function chatRow(c) {
     <td><input type="text" data-k="filter" value="${escape(c.filter || '')}" placeholder="regex; pattern"></td>
     <td><input type="text" data-k="folderTemplate" value="${escape(c.folderTemplate || '')}" placeholder="{Type}/{ChatName}"></td>
     <td><input type="checkbox" data-k="saveHistory" ${c.saveHistory ? 'checked' : ''}></td>
-    <td><button data-act="bootstrap" title="Rate-limited history scan → queue">⬇ Bootstrap</button></td>
+    <td class="${sync.stale ? 'sync-stale' : 'sync-ok'}" title="${escape(sync.title)}">${escape(sync.text)}</td>
+    <td><button data-act="bootstrap" title="Scan history for new media since last sync">⬇ Bootstrap</button></td>
     <td><button data-act="test-download" title="Download newest 10 media as probe">🧪 Test 10</button></td>
   `;
 
@@ -325,11 +347,7 @@ function chatRow(c) {
   });
 
   tr.querySelector('[data-act="bootstrap"]').onclick = async (e) => {
-    if (!c.selected) {
-      alert('Enable monitoring first.\n\nChecking the box only captures NEW messages going forward — it does not scan old history.\nUse Bootstrap to backfill through the rate-limited queue.');
-      return;
-    }
-    if (!confirm(`Bootstrap "${c.name}"?\n\nThis scans history rate-limited, queues media in the database, then downloads gradually. Safe for huge chats — may take hours/days.`)) return;
+    if (!confirm(`Bootstrap "${c.name}"?\n\nScans Telegram history (newest first), queues new media in the database, then downloads gradually.\n\nRun again anytime to pick up posts added since the last sync. Monitor (☑) captures live new messages between bootstraps.`)) return;
     e.target.disabled = true; e.target.textContent = '…';
     try {
       const res = await startBootstrap(c.id);
@@ -424,6 +442,28 @@ async function retryAllFailed(chatId = null) {
   refreshQueue();
 }
 
+async function retryAllSkipped(chatId = null) {
+  const stats = await api('/api/queue/stats');
+  const count = chatId
+    ? statusCount(
+        (await api('/api/queue/stats/by-chat')).find(r => r.chatId === chatId)?.byStatus,
+        'skipped')
+    : statusCount(stats.byStatus, 'skipped');
+  if (!count) {
+    alert('No skipped items to retry.');
+    return;
+  }
+  const scope = chatId ? `"${chatName(chatId)}"` : 'all chats';
+  if (!confirm(`Re-queue ${count} skipped item(s) for ${scope}?\n\nItems may skip again if they are duplicates, stickers/voice, or blocked by filters (V/P/M/F, Min MB, regex).`))
+    return;
+  const url = chatId
+    ? `/api/queue/retry-skipped?chatId=${chatId}`
+    : '/api/queue/retry-skipped';
+  const res = await api(url, { method: 'POST' });
+  alert(`Re-queued ${res.requeued} item(s).`);
+  refreshQueue();
+}
+
 async function deleteAllFailed(chatId = null) {
   const stats = await api('/api/queue/stats');
   const count = chatId
@@ -467,14 +507,17 @@ async function refreshQueue() {
     if (!allChats.length) {
       try { allChats = await api('/api/chats'); } catch {}
     }
-    const [stats, byChat, jobs, limits, failed, flood] = await Promise.all([
+    const [stats, byChat, jobs, limits, failed, skipped, flood] = await Promise.all([
       api('/api/queue/stats'),
       api('/api/queue/stats/by-chat'),
       api('/api/bootstrap/jobs'),
       api('/api/settings/limits'),
       api('/api/queue/items?status=failed&limit=50'),
+      api('/api/queue/items?status=skipped&limit=100'),
       api('/api/flood-wait'),
     ]);
+
+    queueByChat = Object.fromEntries(byChat.map(r => [r.chatId, r]));
 
     renderFloodBanner(flood);
     if (limits.thresholds) {
@@ -486,6 +529,7 @@ async function refreshQueue() {
     renderQueueCards(stats);
     renderBootstrapJobs(jobs);
     renderQueueByChat(byChat);
+    renderSkippedItems(skipped);
     renderFailedItems(failed);
 
     $('#q-capacity').value = limits.scannerApiCapacity ?? 5;
@@ -558,11 +602,13 @@ function renderQueueByChat(rows) {
   body.innerHTML = '';
   const sorted = [...rows].sort((a, b) => b.total - a.total);
   if (!sorted.length) {
-    body.innerHTML = '<tr><td colspan="10" class="muted">No tracked media yet — bootstrap a chat to populate the queue.</td></tr>';
+    body.innerHTML = '<tr><td colspan="11" class="muted">No tracked media yet — bootstrap a chat to populate the queue.</td></tr>';
     return;
   }
   sorted.forEach(r => {
     const tr = document.createElement('tr');
+    const skippedN = statusCount(r.byStatus, 'skipped');
+    const sync = formatLastSync(r);
     tr.innerHTML = `
       <td>${escape(chatName(r.chatId))}</td>
       <td>${r.total}</td>
@@ -571,12 +617,14 @@ function renderQueueByChat(rows) {
       <td>${statusCount(r.byStatus, 'in_progress')}</td>
       <td>${statusCount(r.byStatus, 'done')}</td>
       <td>${statusCount(r.byStatus, 'failed')}</td>
-      <td>${statusCount(r.byStatus, 'skipped')}</td>
+      <td class="skip-count" title="${skippedN ? 'See Skipped items table below for reasons' : ''}">${skippedN}</td>
+      <td class="${sync.stale ? 'sync-stale' : 'sync-ok'}" title="${escape(sync.title)}">${escape(sync.text)}</td>
       <td>${fmtBytes(r.bytes)}</td>
       <td class="actions-cell">
         <button data-act="bootstrap" data-id="${r.chatId}">Bootstrap</button>
         ${r.total ? `<button data-act="clear-queue" data-id="${r.chatId}">Clear queue</button>` : ''}
         ${statusCount(r.byStatus, 'failed') ? `<button data-act="retry-failed" data-id="${r.chatId}">Retry failed</button>` : ''}
+        ${statusCount(r.byStatus, 'skipped') ? `<button data-act="retry-skipped" data-id="${r.chatId}">Retry skipped</button>` : ''}
       </td>`;
     tr.querySelector('[data-act="bootstrap"]').onclick = async (e) => {
       e.target.disabled = true; e.target.textContent = '…';
@@ -596,6 +644,41 @@ function renderQueueByChat(rows) {
       catch (err) { alert(err.message); }
       finally { e.target.disabled = false; }
     });
+    tr.querySelector('[data-act="retry-skipped"]')?.addEventListener('click', async (e) => {
+      e.target.disabled = true;
+      try { await retryAllSkipped(r.chatId); }
+      catch (err) { alert(err.message); }
+      finally { e.target.disabled = false; }
+    });
+    body.appendChild(tr);
+  });
+}
+
+function renderSkippedItems(items) {
+  const body = $('#skipped-table tbody');
+  body.innerHTML = '';
+  if (!items.length) {
+    body.innerHTML = '<tr><td colspan="7" class="muted">No skipped items in the latest batch.</td></tr>';
+    return;
+  }
+  items.forEach(it => {
+    const tr = document.createElement('tr');
+    const reason = it.lastError || '(no reason recorded — re-bootstrap after update to capture reasons)';
+    tr.innerHTML = `
+      <td>${escape(chatName(it.chatId))}</td>
+      <td>${it.messageId}</td>
+      <td>${escape(it.fileName || '—')}</td>
+      <td>${escape(it.kind || '')}</td>
+      <td>${fmtBytes(it.sizeBytes)}</td>
+      <td class="error-cell" title="${escape(reason)}">${escape(reason)}</td>
+      <td><button data-act="retry">Retry</button></td>`;
+    tr.querySelector('[data-act="retry"]').onclick = async (e) => {
+      e.target.disabled = true;
+      try {
+        await api(`/api/queue/${it.chatId}/${it.messageId}/retry`, { method: 'POST' });
+        refreshQueue();
+      } catch (err) { alert(err.message); e.target.disabled = false; }
+    };
     body.appendChild(tr);
   });
 }
@@ -668,6 +751,14 @@ $('#btn-save-limits').onclick = async () => {
 };
 
 $('#btn-refresh-failed').onclick = () => refreshQueue();
+$('#btn-refresh-skipped').onclick = () => refreshQueue();
+$('#btn-retry-all-skipped').onclick = async () => {
+  const btn = $('#btn-retry-all-skipped');
+  btn.disabled = true;
+  try { await retryAllSkipped(); }
+  catch (err) { alert(err.message); }
+  finally { btn.disabled = false; }
+};
 $('#btn-retry-all-failed').onclick = async () => {
   const btn = $('#btn-retry-all-failed');
   btn.disabled = true;

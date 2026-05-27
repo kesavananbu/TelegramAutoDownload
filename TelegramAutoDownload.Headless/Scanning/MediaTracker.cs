@@ -45,10 +45,10 @@ public sealed class MediaTracker
             try { _ = OnStartedAsync(chatName, msgId); } catch (Exception ex) { Log.Warning(ex, "MediaTracker.OnStarted"); }
             prevStarted?.Invoke(chatName, msgId);
         };
-        app.OnSkipped = (chatName, msgId) =>
+        app.OnSkipped = (chatName, msgId, reason) =>
         {
-            try { _ = OnSkippedAsync(chatName, msgId); } catch (Exception ex) { Log.Warning(ex, "MediaTracker.OnSkipped"); }
-            prevSkipped?.Invoke(chatName, msgId);
+            try { _ = OnSkippedAsync(chatName, msgId, reason); } catch (Exception ex) { Log.Warning(ex, "MediaTracker.OnSkipped"); }
+            prevSkipped?.Invoke(chatName, msgId, reason);
         };
         app.OnComplete = (chatName, fileName, success) =>
         {
@@ -77,10 +77,11 @@ public sealed class MediaTracker
         await _repo.SetStatusAsync(chatId, msgId, MediaStatus.InProgress);
     }
 
-    private async Task OnSkippedAsync(string chatName, int msgId)
+    private async Task OnSkippedAsync(string chatName, int msgId, string? reason)
     {
         if (!_chatIdByName.TryGetValue(chatName, out var chatId)) return;
-        await _repo.SetStatusAsync(chatId, msgId, MediaStatus.Skipped);
+        var detail = string.IsNullOrWhiteSpace(reason) ? "Skipped by download filter or dedup" : reason;
+        await _repo.SetStatusAsync(chatId, msgId, MediaStatus.Skipped, detail);
     }
 
     private async Task OnCompleteAsync(string chatName, string fileName, bool success)

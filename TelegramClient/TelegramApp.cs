@@ -40,10 +40,10 @@ namespace TelegramClient
         public Action<string, int>? OnStarted { get; set; }
 
         /// <summary>
-        /// Fired when a file is silently skipped (already downloaded / dedup match): (chatName, msgId).
+        /// Fired when a file is silently skipped (already downloaded / dedup match): (chatName, msgId, reason).
         /// The UI should remove the queued/downloading entry without showing an error.
         /// </summary>
-        public Action<string, int>? OnSkipped { get; set; }
+        public Action<string, int, string?>? OnSkipped { get; set; }
 
         /// <summary>
         /// Fired after a download failure so the UI layer can attach a Retry callback to the item.
@@ -433,7 +433,7 @@ namespace TelegramClient
                                     if (resultExecute.IsSuccess && !string.IsNullOrEmpty(resultExecute.ErrorMessage))
                                     {
                                         // Dedup skip — remove the UI entry silently, no warning needed
-                                        OnSkipped?.Invoke(chat.Name, infoMessage.ID);
+                                        OnSkipped?.Invoke(chat.Name, infoMessage.ID, resultExecute.ErrorMessage);
                                     }
                                     else if (!string.IsNullOrEmpty(resultExecute.ErrorMessage)
                                              && !FactoryMessagesService.IsBenignNoWorkOutcome(resultExecute)
@@ -620,7 +620,7 @@ namespace TelegramClient
                             if (result.IsSuccess && !string.IsNullOrEmpty(result.ErrorMessage))
                             {
                                 // Dedup skip — remove the UI entry silently
-                                OnSkipped?.Invoke(chatDto.Name, msg.ID);
+                                OnSkipped?.Invoke(chatDto.Name, msg.ID, result.ErrorMessage);
                             }
                             else if (result.IsSuccess && string.IsNullOrEmpty(result.ErrorMessage) && OnSaved != null)
                             {
@@ -893,7 +893,7 @@ namespace TelegramClient
                         result = await SaveCapturedTextAsync(msg, chatDto).ConfigureAwait(false);
 
                     if (result.IsSuccess && !string.IsNullOrEmpty(result.ErrorMessage))
-                        OnSkipped?.Invoke(chatDto.Name, msg.ID);
+                        OnSkipped?.Invoke(chatDto.Name, msg.ID, result.ErrorMessage);
                     else if (result.IsSuccess && string.IsNullOrEmpty(result.ErrorMessage) && OnSaved != null)
                     {
                         await OnSaved.Invoke(new ResultMessageEvent
