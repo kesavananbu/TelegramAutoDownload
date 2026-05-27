@@ -7,59 +7,97 @@
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
+
+<!-- Web dashboard login (NPM-style — username/password gate) -->
+<div id="web-login-screen" class="auth-screen">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <div class="auth-logo auth-logo-shield" aria-hidden="true">
+        <svg viewBox="0 0 48 48" width="56" height="56" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="24" cy="24" r="24" fill="#2563eb"/>
+          <path d="M24 12a8 8 0 0 0-8 8v4h-2v12h20V24h-2v-4a8 8 0 0 0-8-8zm0 4a4 4 0 0 1 4 4v4H20v-4a4 4 0 0 1 4-4z" fill="#fff"/>
+        </svg>
+      </div>
+      <h1>Telegram Auto Download</h1>
+      <p>Sign in to access the dashboard</p>
+    </div>
+    <div class="auth-body">
+      <div id="web-login-error" class="error hidden"></div>
+      <div id="web-default-warn" class="warn-box">Default password <strong>changeme</strong> is active — you will be asked to change it after sign-in.</div>
+      <label>Email address <input id="web-username" type="text" autocomplete="username" placeholder="admin"></label>
+      <label>Password <input id="web-password" type="password" autocomplete="current-password"></label>
+      <button id="btn-web-login" class="btn-block" type="button">Sign in</button>
+    </div>
+    <div class="auth-footer">Dashboard access · configure via WEB_USERNAME / WEB_PASSWORD</div>
+  </div>
+</div>
+
+<!-- Telegram account login (after web gate) -->
+<div id="telegram-auth-screen" class="auth-screen hidden">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <div class="auth-logo" aria-hidden="true">
+        <svg viewBox="0 0 48 48" width="56" height="56" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="24" cy="24" r="24" fill="#229ED9"/>
+          <path d="M10.5 23.5L33 14.5L28 34.5L22 27.5L16.5 31L17.5 25.5L10.5 23.5Z" fill="#fff"/>
+        </svg>
+      </div>
+      <h1>Telegram Auto Download</h1>
+      <p>Connect your Telegram account</p>
+    </div>
+
+    <div class="auth-body">
+      <div id="login-error" class="error hidden"></div>
+
+      <div id="step-creds" class="step hidden">
+        <p class="hint">First-time setup — get API credentials from <a href="https://my.telegram.org" target="_blank" rel="noopener">my.telegram.org</a>.</p>
+        <label>App ID <input id="appId" type="number" autocomplete="off"></label>
+        <label>API Hash <input id="apiHash" type="text" autocomplete="off"></label>
+        <button id="btn-save-creds" class="btn-block" type="button">Save &amp; continue</button>
+      </div>
+
+      <div id="step-phone" class="step">
+        <label>Phone number <input id="phone" type="tel" placeholder="+15551234567" autocomplete="tel"></label>
+        <button id="btn-phone" class="btn-block" type="button">Send verification code</button>
+      </div>
+
+      <div id="step-code" class="step hidden">
+        <p class="hint">Enter the code Telegram sent to your phone or Telegram app.</p>
+        <label>Verification code <input id="code" type="text" inputmode="numeric" autocomplete="one-time-code"></label>
+        <button id="btn-code" class="btn-block" type="button">Verify &amp; sign in</button>
+      </div>
+
+      <div id="step-password" class="step hidden">
+        <p class="hint">Two-factor authentication is enabled on this account.</p>
+        <label>Cloud password <input id="password" type="password" autocomplete="current-password"></label>
+        <button id="btn-password" class="btn-block" type="button">Sign in</button>
+      </div>
+    </div>
+
+    <div class="auth-footer">Headless · session stored on this server</div>
+  </div>
+</div>
+
+<!-- Main app (shown only when logged in) -->
+<div id="app-screen" class="hidden">
 <header>
   <h1>Telegram Auto Download</h1>
   <nav>
-    <button data-tab="login"   class="active">Login</button>
-    <button data-tab="chats"   disabled>Chats</button>
-    <button data-tab="queue"   disabled>Queue</button>
-    <button data-tab="status"  disabled>Status</button>
-    <button data-tab="settings" disabled>Settings</button>
-    <button data-tab="logs"    disabled>Logs</button>
+    <button data-tab="chats"    class="active">Chats</button>
+    <button data-tab="queue">Queue</button>
+    <button data-tab="status">Status</button>
+    <button data-tab="settings">Settings</button>
+    <button data-tab="logs">Logs</button>
   </nav>
-  <div id="conn"></div>
+  <div id="header-user" class="header-user muted hidden"></div>
+  <div id="conn" title="Connection"></div>
 </header>
 
 <div id="flood-banner" class="banner hidden" role="alert"></div>
 
 <main>
-  <!-- LOGIN -->
-  <section id="tab-login" class="tab active">
-    <div class="card" id="login-card">
-      <h2>Sign in to Telegram</h2>
-      <div id="login-error" class="error hidden"></div>
-
-      <div id="step-creds" class="step hidden">
-        <p class="hint">No API credentials yet. Get them from <a href="https://my.telegram.org" target="_blank">my.telegram.org</a>.</p>
-        <label>App ID <input id="appId" type="number"></label>
-        <label>API Hash <input id="apiHash" type="text"></label>
-        <button id="btn-save-creds">Save credentials</button>
-      </div>
-
-      <div id="step-phone" class="step">
-        <label>Phone (with country code) <input id="phone" type="tel" placeholder="+15551234567"></label>
-        <button id="btn-phone">Send code</button>
-      </div>
-
-      <div id="step-code" class="step hidden">
-        <label>Verification code <input id="code" type="text" inputmode="numeric" autocomplete="one-time-code"></label>
-        <button id="btn-code">Verify</button>
-      </div>
-
-      <div id="step-password" class="step hidden">
-        <label>2FA password <input id="password" type="password"></label>
-        <button id="btn-password">Sign in</button>
-      </div>
-
-      <div id="step-done" class="step hidden">
-        <p>✅ Signed in. Open the <strong>Chats</strong> tab to choose which chats to monitor.</p>
-        <button id="btn-logout">Sign out</button>
-      </div>
-    </div>
-  </section>
-
   <!-- CHATS -->
-  <section id="tab-chats" class="tab">
+  <section id="tab-chats" class="tab active">
     <div class="card wide info-card">
       <strong>How monitoring works</strong>
       <p class="hint">
@@ -217,6 +255,26 @@
       <div id="settings-threads-warn" class="warn-box hidden"></div>
       <button id="btn-save-threads">Save threads</button>
     </div>
+
+    <div class="card">
+      <h2>Dashboard access</h2>
+      <p class="hint">Signed in to this web dashboard. This is separate from your Telegram account.</p>
+      <div id="settings-pwd-warn" class="warn-box hidden">Default password still in use — change it below.</div>
+      <div id="settings-pwd-error" class="error hidden"></div>
+      <label>Current password <input id="s-pwd-current" type="password" autocomplete="current-password"></label>
+      <label>New password <input id="s-pwd-new" type="password" autocomplete="new-password" minlength="8"></label>
+      <label>Confirm new password <input id="s-pwd-confirm" type="password" autocomplete="new-password" minlength="8"></label>
+      <button id="btn-change-web-password" type="button">Change dashboard password</button>
+      <hr>
+      <button id="btn-web-logout" type="button">Sign out of dashboard</button>
+    </div>
+
+    <div class="card danger-card">
+      <h2>Telegram account</h2>
+      <p class="hint">Signed in as user <strong id="s-user-id">—</strong>.</p>
+      <p class="hint">Signing out removes the Telegram session from this server. Your downloads and queue database are kept, but you will need to verify your phone again.</p>
+      <button id="btn-logout" type="button" class="btn-danger">Sign out of Telegram…</button>
+    </div>
   </section>
 
   <!-- LOGS -->
@@ -246,6 +304,31 @@
     </div>
   </section>
 </main>
+</div>
+
+<!-- Required when default password is still in use -->
+<div id="password-change-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="pwd-modal-title">
+  <div class="auth-card modal-card">
+    <div class="auth-brand">
+      <div class="auth-logo auth-logo-shield" aria-hidden="true">
+        <svg viewBox="0 0 48 48" width="48" height="48" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="24" cy="24" r="24" fill="#dc2626"/>
+          <path d="M24 12a8 8 0 0 0-8 8v4h-2v12h20V24h-2v-4a8 8 0 0 0-8-8zm0 4a4 4 0 0 1 4 4v4H20v-4a4 4 0 0 1 4-4z" fill="#fff"/>
+        </svg>
+      </div>
+      <h2 id="pwd-modal-title">Change default password</h2>
+      <p>The dashboard is still using the default password <strong>changeme</strong>. Choose a new password before continuing.</p>
+    </div>
+    <div class="auth-body">
+      <div id="pwd-change-error" class="error hidden"></div>
+      <label>Current password <input id="pwd-current" type="password" autocomplete="current-password"></label>
+      <label>New password <input id="pwd-new" type="password" autocomplete="new-password" minlength="8"></label>
+      <label>Confirm new password <input id="pwd-confirm" type="password" autocomplete="new-password" minlength="8"></label>
+      <p class="hint">At least 8 characters. Cannot be <code>changeme</code>.</p>
+      <button id="btn-pwd-change" class="btn-block" type="button">Update password</button>
+    </div>
+  </div>
+</div>
 
 <script src="/app.js"></script>
 </body>

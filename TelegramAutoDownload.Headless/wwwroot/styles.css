@@ -1,12 +1,83 @@
 * { box-sizing: border-box; }
 body { font: 14px/1.45 system-ui, sans-serif; margin: 0; background: #f5f6f8; color: #1c1f24; }
+
+/* ─── Auth screen (NPM-style centered login) ─────────────────────────────── */
+.auth-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(34, 158, 217, .18) 0%, transparent 55%),
+    radial-gradient(ellipse at 80% 100%, rgba(37, 99, 235, .12) 0%, transparent 50%),
+    linear-gradient(160deg, #0f172a 0%, #1e293b 45%, #0f172a 100%);
+}
+.auth-screen.hidden { display: none; }
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, .45);
+  overflow: hidden;
+}
+.auth-brand {
+  text-align: center;
+  padding: 2rem 1.75rem 1.25rem;
+  border-bottom: 1px solid #eef0f3;
+  background: linear-gradient(180deg, #f8fafc 0%, #fff 100%);
+}
+.auth-logo { display: flex; justify-content: center; margin-bottom: .75rem; }
+.auth-brand h1 { font-size: 1.2rem; font-weight: 700; margin: 0 0 .35rem; color: #0f172a; }
+.auth-brand p { color: #64748b; font-size: 13px; margin: 0; }
+.auth-body { padding: 1.25rem 1.75rem 1.5rem; }
+.auth-body .step { margin-top: 0; }
+.auth-body label { margin: .75rem 0; }
+.auth-body .hint { margin: 0 0 .5rem; }
+.auth-footer {
+  text-align: center;
+  padding: .65rem 1rem;
+  font-size: 11px;
+  color: #94a3b8;
+  background: #f8fafc;
+  border-top: 1px solid #eef0f3;
+}
+.btn-block { display: block; width: 100%; margin-top: .5rem; padding: .65rem 1rem; }
+.btn-danger {
+  background: #fff;
+  border: 1px solid #dc2626;
+  color: #b91c1c;
+  padding: .55rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+}
+.btn-danger:hover { background: #fef2f2; }
+
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+  padding: 1.5rem;
+  background: rgba(15, 23, 42, .72);
+  backdrop-filter: blur(4px);
+}
+.modal-overlay.hidden { display: none; }
+.modal-card { max-width: 440px; margin: 0; }
+.modal-card h2 { font-size: 1.15rem; margin: 0 0 .35rem; color: #0f172a; }
+.modal-card .auth-brand p { font-size: 13px; color: #64748b; margin: 0; }
+.modal-card .auth-brand p strong { color: #b91c1c; }
+
+#app-screen.hidden { display: none; }
+
 header { display: flex; align-items: center; gap: 1rem; padding: .75rem 1rem; background: #1c1f24; color: #fff; }
 header h1 { font-size: 1.1rem; margin: 0; flex: 0 0 auto; }
 header nav { display: flex; gap: .25rem; flex: 1; }
 header nav button { background: transparent; color: #cfd3dc; border: 1px solid transparent; padding: .35rem .8rem; border-radius: 4px; cursor: pointer; }
 header nav button.active { background: #2a2e36; color: #fff; border-color: #3a3f48; }
 header nav button:disabled { opacity: .35; cursor: not-allowed; }
-#conn { width: .6rem; height: .6rem; border-radius: 50%; background: #888; }
+.header-user { font-size: 12px; white-space: nowrap; }
+#conn { width: .6rem; height: .6rem; border-radius: 50%; background: #888; flex-shrink: 0; }
 #conn.ok  { background: #29c46f; }
 #conn.bad { background: #e64545; }
 

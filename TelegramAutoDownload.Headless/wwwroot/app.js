@@ -2,29 +2,146 @@
 const $  = (q, r=document) => r.querySelector(q);
 const $$ = (q, r=document) => Array.from(r.querySelectorAll(q));
 
-// ─── Tabs ────────────────────────────────────────────────────────────────────
-$$('header nav button').forEach(b => b.addEventListener('click', () => {
-  if (b.disabled) return;
-  $$('header nav button').forEach(x => x.classList.toggle('active', x === b));
-  $$('.tab').forEach(t => t.classList.toggle('active', t.id === `tab-${b.dataset.tab}`));
-  if (b.dataset.tab === 'chats')    loadChats();
-  if (b.dataset.tab === 'queue')    refreshQueue();
-  if (b.dataset.tab === 'status')   refreshStatus();
-  if (b.dataset.tab === 'settings') loadSettings();
-  if (b.dataset.tab === 'logs')    openLogsTab();
-}));
+// ─── Web gate + Telegram auth ────────────────────────────────────────────────
+let webAuthenticated = false;
+let loggedIn = false;
+let mustChangeWebPassword = false;
 
-function unlockTabs(on) {
-  $$('header nav button').forEach(b => {
-    if (b.dataset.tab !== 'login') b.disabled = !on;
-  });
+function applyDefaultPasswordUi(isDefault) {
+  const onLogin = $('#web-default-warn');
+  if (onLogin) onLogin.classList.toggle('hidden', !isDefault);
+  const inSettings = $('#settings-pwd-warn');
+  if (inSettings) inSettings.classList.toggle('hidden', !isDefault);
 }
+
+function showPasswordChangeModal(show) {
+  mustChangeWebPassword = show;
+  $('#password-change-modal')?.classList.toggle('hidden', !show);
+  if (show) {
+    $('#telegram-auth-screen').classList.add('hidden');
+    $('#app-screen').classList.add('hidden');
+    showError($('#pwd-change-error'));
+    $('#pwd-new')?.focus();
+  }
+}
+
+async function submitPasswordChange(current, newPwd, confirm, errEl) {
+  showError(errEl);
+  if (newPwd !== confirm) { showError(errEl, 'New password and confirmation do not match.'); return false; }
+  try {
+    const res = await api('/api/web-auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword: current, newPassword: newPwd, confirmPassword: confirm }),
+    });
+    applyDefaultPasswordUi(!!res.defaultPassword);
+    showPasswordChangeModal(false);
+    $('#pwd-current').value = '';
+    $('#pwd-new').value = '';
+    $('#pwd-confirm').value = '';
+    await refreshLoginStatus();
+    return true;
+  } catch (e) {
+    showError(errEl, e.message);
+    return false;
+  }
+}
+
+function showWebLogin(show) {
+  $('#web-login-screen').classList.toggle('hidden', !show);
+  if (show) {
+    $('#telegram-auth-screen').classList.add('hidden');
+    $('#app-screen').classList.add('hidden');
+  }
+}
+
+function setTelegramAuthState(isLoggedIn, userId) {
+  loggedIn = isLoggedIn;
+  $('#telegram-auth-screen').classList.toggle('hidden', isLoggedIn);
+  $('#app-screen').classList.toggle('hidden', !isLoggedIn);
+  const userEl = $('#header-user');
+  if (isLoggedIn && userId) {
+    userEl.textContent = `User ${userId}`;
+    userEl.classList.remove('hidden');
+    $('#s-user-id').textContent = userId;
+  } else {
+    userEl.classList.add('hidden');
+    userEl.textContent = '';
+    $('#s-user-id').textContent = '—';
+  }
+}
+
+function enterApp(userId) {
+  setTelegramAuthState(true, userId);
+  switchTab('chats');
+}
+
+function leaveTelegramApp() {
+  setTelegramAuthState(false);
+  showStep('phone');
+  $('#code').value = '';
+  $('#password').value = '';
+}
+
+async function checkWebAuth() {
+  const ws = await fetch('/api/web-auth/status', { credentials: 'include' }).then(r => r.json());
+  applyDefaultPasswordUi(!!ws.defaultPassword);
+  if (!ws.enabled) {
+    webAuthenticated = true;
+    showWebLogin(false);
+    return true;
+  }
+  webAuthenticated = !!ws.authenticated;
+  if (!webAuthenticated) {
+    showWebLogin(true);
+    return false;
+  }
+  showWebLogin(false);
+  if (ws.defaultPassword) {
+    showPasswordChangeModal(true);
+    return true;
+  }
+  showPasswordChangeModal(false);
+  return true;
+}
+
+async function initApp() {
+  try {
+    if (!(await checkWebAuth())) return;
+    if (!mustChangeWebPassword) await refreshLoginStatus();
+  } catch (e) {
+    showError($('#web-login-error'), e.message);
+    showWebLogin(true);
+  }
+}
+
+// ─── Tabs ────────────────────────────────────────────────────────────────────
+function switchTab(name) {
+  $$('header nav button').forEach(x => x.classList.toggle('active', x.dataset.tab === name));
+  $$('#app-screen .tab').forEach(t => t.classList.toggle('active', t.id === `tab-${name}`));
+  if (name === 'chats')    loadChats();
+  if (name === 'queue')    refreshQueue();
+  if (name === 'status')   refreshStatus();
+  if (name === 'settings') loadSettings();
+  if (name === 'logs')     openLogsTab();
+}
+
+$$('header nav button').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 async function api(path, opts = {}) {
-  const r = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
+  const r = await fetch(path, {
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    ...opts,
+  });
   let data = {};
   try { data = await r.json(); } catch {}
+  if (r.status === 401 && data.webAuthRequired) {
+    webAuthenticated = false;
+    loggedIn = false;
+    showWebLogin(true);
+    throw new Error('Session expired — sign in again.');
+  }
   if (!r.ok) {
     const err = new Error(data.error || `HTTP ${r.status}`);
     err.status = r.status;
@@ -187,7 +304,7 @@ function applySettingsThreadWarning(threads) {
 // ─── Login ───────────────────────────────────────────────────────────────────
 const loginErr = $('#login-error');
 const steps = { creds: $('#step-creds'), phone: $('#step-phone'), code: $('#step-code'),
-                password: $('#step-password'), done: $('#step-done') };
+                password: $('#step-password') };
 function showStep(name) {
   Object.entries(steps).forEach(([n, el]) => el.classList.toggle('hidden', n !== name));
 }
@@ -195,15 +312,86 @@ function showStep(name) {
 async function refreshLoginStatus() {
   try {
     const [ls, st] = await Promise.all([api('/api/login/status'), api('/api/settings')]);
+    $('#conn').className = ls.loggedIn ? 'ok' : 'bad';
     if (ls.loggedIn) {
-      showStep('done'); unlockTabs(true); return;
+      if (!loggedIn) enterApp(ls.userId);
+      else setTelegramAuthState(true, ls.userId);
+      return;
     }
+    leaveTelegramApp();
     if (!st.appIdConfigured) { showStep('creds'); return; }
-    if (ls.stage === 'AwaitingCode')     showStep('code');
+    if (ls.stage === 'AwaitingCode')          showStep('code');
     else if (ls.stage === 'AwaitingPassword') showStep('password');
-    else                                  showStep('phone');
-  } catch (e) { showError(loginErr, e.message); }
+    else                                      showStep('phone');
+  } catch (e) { showError($('#login-error'), e.message); }
 }
+
+$('#btn-web-login').onclick = async () => {
+  const errEl = $('#web-login-error');
+  showError(errEl);
+  try {
+    const res = await fetch('/api/web-auth/login', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: $('#web-username').value.trim(),
+        password: $('#web-password').value,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { showError(errEl, data.error || 'Sign in failed'); return; }
+    webAuthenticated = true;
+    $('#web-password').value = '';
+    showWebLogin(false);
+    applyDefaultPasswordUi(!!data.defaultPassword);
+    if (data.defaultPassword) {
+      showPasswordChangeModal(true);
+      return;
+    }
+    await refreshLoginStatus();
+  } catch (e) { showError(errEl, e.message); }
+};
+
+$('#web-password')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') $('#btn-web-login').click();
+});
+
+$('#btn-pwd-change').onclick = async () => {
+  await submitPasswordChange(
+    $('#pwd-current').value,
+    $('#pwd-new').value,
+    $('#pwd-confirm').value,
+    $('#pwd-change-error'),
+  );
+};
+
+$('#pwd-confirm')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') $('#btn-pwd-change').click();
+});
+
+$('#btn-change-web-password').onclick = async () => {
+  const ok = await submitPasswordChange(
+    $('#s-pwd-current').value,
+    $('#s-pwd-new').value,
+    $('#s-pwd-confirm').value,
+    $('#settings-pwd-error'),
+  );
+  if (ok) {
+    $('#s-pwd-current').value = '';
+    $('#s-pwd-new').value = '';
+    $('#s-pwd-confirm').value = '';
+    alert('Dashboard password updated.');
+  }
+};
+
+$('#btn-web-logout').onclick = async () => {
+  await api('/api/web-auth/logout', { method: 'POST' });
+  webAuthenticated = false;
+  loggedIn = false;
+  $('#web-password').value = '';
+  showWebLogin(true);
+};
 
 $('#btn-save-creds').onclick = async () => {
   showError(loginErr);
@@ -221,7 +409,7 @@ $('#btn-phone').onclick = async () => {
   try {
     const res = await api('/api/login/phone', { method: 'POST', body: JSON.stringify({ phone: $('#phone').value.trim() }) });
     if (res.error) { showError(loginErr, res.error); return; }
-    if (res.stage === 'LoggedIn')         { showStep('done'); unlockTabs(true); }
+    if (res.stage === 'LoggedIn')              await refreshLoginStatus();
     else if (res.stage === 'AwaitingPassword') showStep('password');
     else                                       showStep('code');
   } catch (e) { showError(loginErr, e.message); }
@@ -232,7 +420,7 @@ $('#btn-code').onclick = async () => {
   try {
     const res = await api('/api/login/code', { method: 'POST', body: JSON.stringify({ code: $('#code').value.trim() }) });
     if (res.error) { showError(loginErr, res.error); return; }
-    if (res.stage === 'LoggedIn')         { showStep('done'); unlockTabs(true); }
+    if (res.stage === 'LoggedIn')              await refreshLoginStatus();
     else if (res.stage === 'AwaitingPassword') showStep('password');
   } catch (e) { showError(loginErr, e.message); }
 };
@@ -242,13 +430,17 @@ $('#btn-password').onclick = async () => {
   try {
     const res = await api('/api/login/password', { method: 'POST', body: JSON.stringify({ password: $('#password').value }) });
     if (res.error) { showError(loginErr, res.error); return; }
-    if (res.stage === 'LoggedIn') { showStep('done'); unlockTabs(true); }
+    if (res.stage === 'LoggedIn') await refreshLoginStatus();
   } catch (e) { showError(loginErr, e.message); }
 };
 
 $('#btn-logout').onclick = async () => {
+  if (!confirm(
+    'Sign out of Telegram on this server?\n\n' +
+    'Downloads and queue data are kept, but the session is removed and you will need to verify your phone again.'
+  )) return;
   await api('/api/login/logout', { method: 'POST' });
-  unlockTabs(false); showStep('phone');
+  await refreshLoginStatus();
 };
 
 // ─── Chats ──────────────────────────────────────────────────────────────────
@@ -813,7 +1005,8 @@ async function refreshStatus() {
 // ─── Settings ───────────────────────────────────────────────────────────────
 async function loadSettings() {
   try {
-    const s = await api('/api/settings');
+    const [s, ws] = await Promise.all([api('/api/settings'), api('/api/web-auth/status')]);
+    applyDefaultPasswordUi(!!ws.defaultPassword);
     $('#s-folder').value = s.downloadFolder || '';
     if ($('#s-folder-layout')) $('#s-folder-layout').value = s.folderLayout || 'TypeFirst';
     $('#s-threads').value = s.downloadThreads || 3;
@@ -838,17 +1031,19 @@ $('#btn-save-threads').onclick = async () => {
 
 // ─── Poller ─────────────────────────────────────────────────────────────────
 async function poll() {
+  if (!webAuthenticated || mustChangeWebPassword) return;
   try {
     const [ls, flood] = await Promise.all([api('/api/login/status'), api('/api/flood-wait')]);
     renderFloodBanner(flood);
     $('#conn').className = ls.loggedIn ? 'ok' : 'bad';
-    if (ls.loggedIn) unlockTabs(true);
-    if ($('#tab-status').classList.contains('active')) refreshStatus();
-    if ($('#tab-queue').classList.contains('active')) refreshQueue();
-  } catch { $('#conn').className = 'bad'; }
+    if (ls.loggedIn && !loggedIn) await refreshLoginStatus();
+    else if (!ls.loggedIn && loggedIn) await refreshLoginStatus();
+    if (loggedIn && $('#tab-status').classList.contains('active')) refreshStatus();
+    if (loggedIn && $('#tab-queue').classList.contains('active')) refreshQueue();
+  } catch { if ($('#conn')) $('#conn').className = 'bad'; }
 }
 
-refreshLoginStatus();
+initApp();
 setInterval(poll, 2500);
 
 // ─── Logs (tail + SSE, client ring buffer) ───────────────────────────────────

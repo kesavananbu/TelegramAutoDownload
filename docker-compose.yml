@@ -11,6 +11,9 @@ services:
     #ports:
     #  - "8080:8080"
     environment:
+      # Web dashboard login (NPM-style gate — change these before exposing on your network).
+      WEB_USERNAME: "admin"
+      WEB_PASSWORD: "changeme"
       # Optional — if you'd rather not set credentials from the web UI on first run,
       # uncomment and put yours here (get them from https://my.telegram.org).
       # APP_ID: "12345678"

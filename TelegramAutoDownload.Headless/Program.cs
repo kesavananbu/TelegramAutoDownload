@@ -36,6 +36,7 @@ builder.Services.AddSingleton<ScanRateLimits>();
 builder.Services.AddSingleton<BootstrapManager>();
 builder.Services.AddSingleton<ChatDownloadTester>();
 builder.Services.AddSingleton<HeadlessLogReader>();
+builder.Services.AddSingleton(WebAuthService.Load());
 builder.Services.AddHostedService<DownloadOrchestrator>();
 
 builder.WebHost.UseUrls(Environment.GetEnvironmentVariable("LISTEN_URL") ?? "http://0.0.0.0:8080");
@@ -45,6 +46,59 @@ var app = builder.Build();
 // Serve the static web UI from wwwroot/
 app.UseDefaultFiles();
 app.UseStaticFiles();
+app.UseWebAuth();
+
+// ─── Web UI login (username/password — public endpoints) ─────────────────────
+app.MapGet("/api/web-auth/status", (WebAuthService auth, HttpContext ctx) =>
+{
+    if (!auth.Enabled)
+        return Results.Json(new { enabled = false, authenticated = true });
+
+    var ok = auth.TryGetSession(ctx.Request, out var user);
+    return Results.Json(new
+    {
+        enabled           = true,
+        authenticated     = ok,
+        username          = ok ? user : null,
+        defaultPassword   = auth.UsingDefaultPassword,
+        mustChangePassword = auth.UsingDefaultPassword,
+    });
+});
+
+app.MapPost("/api/web-auth/login", (WebAuthService auth, HttpContext ctx, WebLoginRequest req) =>
+{
+    if (!auth.Enabled)
+        return Results.Json(new { ok = true, disabled = true });
+
+    if (string.IsNullOrWhiteSpace(req.Username) || string.IsNullOrEmpty(req.Password))
+        return Results.BadRequest(new { error = "Username and password are required" });
+
+    if (!auth.ValidateCredentials(req.Username, req.Password))
+        return Results.Json(new { error = "Invalid username or password" }, statusCode: StatusCodes.Status401Unauthorized);
+
+    auth.SignIn(ctx.Response, auth.Username);
+    return Results.Json(new { ok = true, username = auth.Username, defaultPassword = auth.UsingDefaultPassword });
+});
+
+app.MapPost("/api/web-auth/logout", (WebAuthService auth, HttpContext ctx) =>
+{
+    auth.SignOut(ctx.Response);
+    return Results.Json(new { ok = true });
+});
+
+app.MapPost("/api/web-auth/change-password", (WebAuthService auth, WebChangePasswordRequest req) =>
+{
+    if (!auth.Enabled)
+        return Results.BadRequest(new { error = "Web authentication is disabled." });
+
+    if (string.IsNullOrEmpty(req.NewPassword) || req.NewPassword != req.ConfirmPassword)
+        return Results.BadRequest(new { error = "New password and confirmation must match." });
+
+    if (!auth.TryChangePassword(req.CurrentPassword ?? "", req.NewPassword, out var error))
+        return Results.Json(new { error }, statusCode: StatusCodes.Status400BadRequest);
+
+    return Results.Json(new { ok = true, defaultPassword = auth.UsingDefaultPassword });
+});
 
 // Apply migrations + import legacy dedup index BEFORE the login probe runs,
 // so the new DB is consistent and queryable from the first request.
@@ -533,6 +587,8 @@ static object ToFloodJson(FloodWaitSnapshot s) => new
 internal record PhoneRequest(string Phone);
 internal record CodeRequest(string Code);
 internal record PasswordRequest(string Password);
+internal record WebLoginRequest(string Username, string Password);
+internal record WebChangePasswordRequest(string? CurrentPassword, string NewPassword, string ConfirmPassword);
 internal record CredentialsRequest(int AppId, string ApiHash);
 internal record FolderRequest(string Folder);
 internal record FolderLayoutRequest(string Layout);
