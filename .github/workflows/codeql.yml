@@ -3,8 +3,7 @@
 # dashboard. Split from pr-validation.yml because C# CodeQL needs a full build
 # on a Windows runner (net8.0-windows TFMs) and takes materially longer.
 #
-# STATUS: UNVALIDATED — authored without execution.
-#         See docs/ops/05-cicd.md § "First-run validation checklist".
+# STATUS: UNVALIDATED — Phase 5 re-run (Composer 2.5), 2026-10-01. See docs/ops/05-cicd.md §5.
 # ─────────────────────────────────────────────────────────────────────────────
 name: CodeQL
 

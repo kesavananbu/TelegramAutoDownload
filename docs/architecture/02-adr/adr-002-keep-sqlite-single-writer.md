@@ -1,7 +1,8 @@
 # ADR-002 — Keep SQLite with WAL and an enforced single-writer boundary
 
 - **Status:** Proposed
-- **Date:** 2026-09-30
+- **Date:** 2026-10-01
+- **Review:** Composer 2.5 re-run — read-only verification on `enterprise-readiness` @ `1c3753e`; no build
 - **Deciders:** Architecture
 - **Related:** ADR-001, ADR-005, ADR-007
 
@@ -21,7 +22,7 @@ The question is whether to keep this or move to Postgres. The brief requires the
 
 > **≈ 1.3 writes/s.**
 
-**Live path.** ~3 writes per message (`Scanning/MediaTracker.cs:69,77,93`). At the p99 assumption of 50k messages/day:
+**Live path.** ~3 writes per message (`Scanning/MediaTracker.cs:69,77,87-95` via `InsertPending` / `SetStatusAsync` on `OnStarted` / `OnComplete`). At the p99 assumption of 50k messages/day:
 
 > **≈ 1.7 writes/s average.**
 

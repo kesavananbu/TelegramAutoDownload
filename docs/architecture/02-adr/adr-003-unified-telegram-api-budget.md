@@ -1,7 +1,8 @@
 # ADR-003 — One Telegram gateway and one adaptive API budget
 
 - **Status:** Proposed
-- **Date:** 2026-09-30
+- **Date:** 2026-10-01
+- **Review:** Composer 2.5 re-run — read-only verification on `enterprise-readiness` @ `1c3753e`; no build
 - **Deciders:** Architecture
 - **Related:** ADR-001, ADR-005
 - **Priority:** Highest. This is the defect most likely to produce the outcome the product exists to prevent.

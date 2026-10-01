@@ -1,5 +1,16 @@
 # 05 — Operations: SLOs, Observability, Backup/DR, Upgrade & Rollback, Runbook
 
+**Phase 5 re-run (Composer 2.5)** — branch `enterprise-readiness`, 2026-10-01.  
+Pipelines: five workflows under `.github/workflows/` (**UNVALIDATED** — see [`05-cicd.md`](./05-cicd.md)).
+
+### Executive summary (for operators)
+
+| Item | Verdict |
+|---|---|
+| **Workflows** | `pr-validation.yml`, `codeql.yml`, `container-image.yml`, `release-desktop.yml`, `scheduled-maintenance.yml` |
+| **Auto-updater** | **Not enterprise-safe as written** — wrong release feed (`AppVersion.cs:6`), no hash/signature verification, batch-script delivery (`AutoUpdateService.cs:124-226`). Replace with Velopack or a signed manifest + helper exe; see §4.3. |
+| **Top 5 day-one ops risks** | (1) Desktop update feed/RCE via third-party `il90il90` releases + unverified payloads (U1–U2). (2) Shipped defaults `admin`/`changeme` (`docker-compose.yml:16-17`). (3) No tested backup/DR; session at `/data/TelegramAutoDownload/session.dat`, not `HeadlessPaths.SessionFile` (§0.1a). (4) No `/healthz` or metrics — outages invisible until users complain. (5) Container `yt-dlp` frozen at image build (`Dockerfile:34-37`) while desktop self-updates (`YtdlpService.cs:41-108`) — recurring social/YouTube breakage. |
+
 **Scope:** reliability engineering for TelegramAutoDownload across both deployment
 surfaces — the container (`TelegramAutoDownload.Headless/`, packaged by `Dockerfile`)
 and the desktop WPF app (`TelegramAutoDownload/`).
@@ -30,7 +41,7 @@ Every claim in the brief was checked against the tree.
 
 | Claim | Verdict | Evidence |
 |---|---|---|
-| No `.github/`, no CI/CD | **Confirmed** (before this work) | `.github/` did not exist; the five workflows in this change are the first |
+| CI/CD workflows present but unvalidated | **Confirmed** | Five files under `.github/workflows/`; none executed in this exercise (`docs/ops/05-cicd.md`) |
 | No tracked `.sln` despite README referencing `RunnerApp.sln` | **Confirmed** | `Get-ChildItem -Recurse -Filter *.sln` returns nothing; `README.md:111`, `README.md:120`, `README.md:298` all reference `RunnerApp.sln` |
 | Serilog → console + daily rolling file, 7-day retention | **Confirmed** | `TelegramAutoDownload.Headless/Program.cs:15-23` (`retainedFileCountLimit: 7` at `:20`) |
 | Seq sink available in `Logger/` | **Confirmed, unwired** | `Logger/Services/SeqService.cs:11-13`; nothing in `Program.cs` references it |

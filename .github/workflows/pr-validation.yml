@@ -2,9 +2,8 @@
 # PR Validation — build, test, coverage gate, static analysis, dependency CVE
 # scan, secret scan, and a container smoke test.
 #
-# STATUS: UNVALIDATED. Authored without executing (another agent owns the build
-#         machine; concurrent `dotnet build` causes file-lock conflicts).
-#         See docs/ops/05-cicd.md § "First-run validation checklist".
+# STATUS: UNVALIDATED — Phase 5 re-run (Composer 2.5), 2026-10-01. Not executed;
+#         no dotnet build in authoring workspace. See docs/ops/05-cicd.md §5.
 #
 # WHY WINDOWS RUNNERS: TelegramAutoDownload.Tests targets net8.0-windows and
 #   project-references the WPF app (TelegramAutoDownload.Tests.csproj:4,28), so

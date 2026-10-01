@@ -1,41 +1,42 @@
 # Draft legal & policy documents — PROPOSED, NOT ADOPTED
 
-These files are **drafts prepared for review**. They are deliberately kept in
-`docs/compliance/drafts/` and **not** at the repository root, because placing them at the root
-would imply the project has adopted them.
+These files are **drafts prepared for review**. They live under `docs/compliance/drafts/`
+until explicitly promoted to the repository root.
 
-Nothing here is legal advice. The author is not a lawyer. Each draft is written to give
-counsel a concrete starting point rather than a blank page, and to make the open questions
-explicit.
+**Product direction (2026-10-01):** **Free personal tool** — not a commercial product.
+Marketplace, billing, and licence-key enforcement are out of scope. See
+`docs/product/01-product-definition.md` and `docs/gtm/07-marketplace-readiness.md`
+(distribution & community).
+
+Nothing here is legal advice.
 
 ## Status of each draft
 
-| File | Intended final location | Status | Needs counsel? |
+| File | Intended final location | Status | Notes |
 |---|---|---|---|
-| `LICENSE` | `/LICENSE` | Draft — two options presented, owner must choose | **Yes** — before adoption |
-| `SECURITY.md` | `/SECURITY.md` | Draft — adoptable with minor edits | Light review |
-| `NOTICE.md` | `/NOTICE` + shipped in installer & image | Draft — factually complete | Light review |
-| `acceptable-use-policy.md` | Website + in-product link | Draft — substantive clauses written | **Yes** |
-| `dmca-notice-and-takedown.md` | Website | Draft — process written | **Yes** |
-| `privacy-policy-outline.md` | Website | **Outline only** | **Yes — must be drafted by counsel** |
-| `terms-of-service-outline.md` | Website + EULA | **Outline only** | **Yes — must be drafted by counsel** |
+| `LICENSE` | `/LICENSE` | **MIT Option C recommended** | Copy from draft; set copyright |
+| `SECURITY.md` | `/SECURITY.md` | Draft — adopt with minor edits | Free OSS standard |
+| `NOTICE.md` | `/NOTICE` + release artifacts | Draft — factual inventory | Required for Apache + GPL ffmpeg |
+| `acceptable-use-policy.md` | Website / README link | Outline + clauses | Optional for GitHub-only; useful if site collects data |
+| `dmca-notice-and-takedown.md` | Website / SECURITY.md link | Process draft | Repo contact path, not §512 hosting |
+| `privacy-policy-outline.md` | Website | Outline only | Counsel if operating a website with analytics |
+| `terms-of-service-outline.md` | Website | Outline only | Less critical for pure MIT OSS on GitHub |
 
 ## Placeholders
 
-Every draft uses these placeholders. All must be replaced before publication:
+Replace before publication:
 
-- `[LEGAL ENTITY NAME]` — the contracting entity (see open question below)
-- `[PRODUCT NAME]` — **must not contain "Telegram"** in the title; see
-  `../06-compliance.md` §2.2 (Telegram API ToS §2.3)
-- `[JURISDICTION]` — governing law and venue
-- `[REGISTERED ADDRESS]`
-- `[SECURITY EMAIL]`, `[LEGAL EMAIL]`, `[PRIVACY EMAIL]`, `[SUPPORT EMAIL]`
-- `[WEBSITE]`
-- `[YEAR]`
+- `[COPYRIGHT HOLDER]` / `[LEGAL ENTITY NAME]` — individual maintainer or org
+- `[PRODUCT NAME]` — **avoid "Telegram" in the product title** (`../06-compliance.md` §2)
+- `[YEAR]`, emails, jurisdiction — as needed for SECURITY/policies
 
-## Open question the owner must answer before any of this is finalised
+## Entity formation
 
-**Is there a legal entity?** Every draft assumes one. Selling software personally, with no
-limited-liability entity, means personal exposure to the content-liability and data-protection
-risks identified in `../06-compliance.md` §4. Forming an entity is a prerequisite to
-commercialisation, not a later administrative step.
+**[ASSESSMENT]** For a **free** project, a formal entity is **optional**. It becomes relevant
+if you accept donations, sell support, publish signed binaries as a business, or face
+content-liability exposure. Not a prerequisite for MIT + GitHub Releases.
+
+## Related reading
+
+- `../06-compliance.md` — surviving legal risks for a free tool
+- `../../security/04-findings.md` — security hardening (product quality goal)

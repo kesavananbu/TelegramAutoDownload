@@ -1,13 +1,13 @@
 # 05 — CI/CD Pipelines: documentation, required secrets, validation checklist
 
-> ## ⚠ EVERY WORKFLOW IN THIS CHANGE IS **UNVALIDATED**
+**Phase 5 re-run (Composer 2.5)** — branch `enterprise-readiness`, 2026-10-01.
+
+> ## ⚠ EVERY WORKFLOW IS **UNVALIDATED**
 >
-> The five files under `.github/workflows/` were authored **without being executed
-> even once**. The task constraints forbade running `dotnet build` or `dotnet test`
-> in this workspace (another agent owns the build machine; concurrent builds cause
-> file-lock conflicts), and GitHub Actions workflows cannot be run locally with any
-> fidelity — Windows runners, Chocolatey-installed Inno Setup, GHCR pushes, and the
-> `gh release` API surface are all unavailable here.
+> The five files under `.github/workflows/` were refreshed in this re-run **without
+> being executed**. Constraints: read-only on `*.cs`, no `dotnet build` / `dotnet test`
+> in this workspace (file-lock conflicts with the build owner). GitHub Actions cannot
+> be exercised locally with fidelity (Windows + Inno Setup + GHCR + `gh release`).
 >
 > What **was** verified:
 >
@@ -19,14 +19,26 @@
 > What was **not** verified: that any step actually succeeds. Treat the first run of
 > each workflow as a debugging session, not a release. §5 is the ordered checklist.
 
+### Workflow inventory (quick reference)
+
+| Workflow file | Name (GitHub UI) | Blocking? |
+|---|---|---|
+| `.github/workflows/pr-validation.yml` | PR Validation | Yes — use job **`PR gate`** for branch protection |
+| `.github/workflows/codeql.yml` | CodeQL | Advisory until triaged; weekly schedule |
+| `.github/workflows/container-image.yml` | Container Image | Push path — Trivy blocks CRITICAL/HIGH (fixable) |
+| `.github/workflows/release-desktop.yml` | Release (Desktop) | Tag / manual; both Setup.exe + Portable.zip enforced |
+| `.github/workflows/scheduled-maintenance.yml` | Scheduled Maintenance | Daily; issues + release audit (can fail on bad history) |
+
 ---
 
-## 1. Why there was nothing here before
+## 1. Baseline and why CI matters
 
-Before this change the repository had **no `.github/` directory at all**. Every
-build, test, installer compile, and release upload was performed by hand from a
-developer workstation following `.cursor/rules/release-process.mdc`. The practical
-consequences:
+Historically the repository had **no tracked CI** (Phase 0 ground truth in
+`docs/enterprise-readiness-prompt.md:41`). This branch now carries five workflow
+files; they remain **design-only until Phase 1 of §5 passes**. Until then, every
+build, test, installer compile, and release upload still depends on manual steps
+from `.cursor/rules/release-process.mdc`. The practical consequences if CI is not
+enabled and green:
 
 - The mandatory both-artifacts invariant (`release-process.mdc:10-15`) was enforced
   only by an operator remembering to read the rule.

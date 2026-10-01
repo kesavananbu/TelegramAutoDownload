@@ -11,7 +11,7 @@ dependencies change.
 
 This product includes, or interoperates with, third-party software. The components and their
 licences are listed below. Each component remains subject to its own licence terms, which
-take precedence over the product's End-User Licence Agreement with respect to that component.
+take precedence over this project's MIT licence with respect to that component.
 
 Full licence texts are distributed alongside this file in `licenses/`.
 

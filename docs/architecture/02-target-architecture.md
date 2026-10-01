@@ -1,8 +1,12 @@
 # TelegramAutoDownload — As-Is Assessment and Target Architecture
 
-**Status:** Draft for review
+**Status:** Draft for review (Phase 2 re-run)
+**Branch / commit:** `enterprise-readiness` @ `1c3753e`
+**Reviewed:** 2026-10-01 — Composer 2.5 re-run
 **Scope:** `TelegramAutoDownload.Headless` (server), `TelegramClient` (engine), `BasePlugin` + 4 plugin assemblies, `TelegramAutoDownload` (WPF desktop)
-**Method:** Static reading of the `enterprise-readiness` working tree. No builds were run. Every factual claim about existing behaviour carries a `path:line` citation. Every number is either derived from code constants (shown) or explicitly labelled an estimate.
+**Method:** Read-only static analysis of the working tree. No `dotnet build` or tests were run. Every factual claim about existing behaviour carries a `path:line` citation. Every number is either derived from code constants (shown) or explicitly labelled an estimate.
+
+**Re-run outcome:** All prior Phase 2 conclusions stand after re-verification. No material code drift on the cited hot paths (`Program.cs` 641 lines, `TelegramApp.cs` 1799 lines, migration runner at `Database.cs:63-109`, token bucket wired only at `BootstrapScanner.cs:64-68`). One documentation correction: live-path DB writes advance via `OnComplete` (`Scanning/MediaTracker.cs:53-97`), not a separate `OnSaved` hook.
 
 ---
 
@@ -317,7 +321,7 @@ Secondary: the JSON rewrite is O(n). At the p99 scale of 2M downloaded documents
 
 1. **`_inFlight` leak.** `Task.Run(() => DispatchAsync(row, stop), stop)` (`DownloadOrchestrator.cs:81`) is preceded by `Interlocked.Increment` at `:80`. If `stop` is already signalled, `Task.Run` returns a cancelled task **without invoking the delegate**, so the `finally` at `:187-189` never decrements. The row also stays `in_progress`. Recovered only by the startup sweep at `Database.cs:56-58`.
 2. **Infinite poison loop.** The FLOOD_WAIT handler resets the row to `Queued` (`DownloadOrchestrator.cs:171`) — a status that does **not** bump `attempts` (`MediaRepository.cs:79` increments only on `Failed`). `PickQueuedAsync` orders by `queued_at ASC` (`MediaRepository.cs:213`), and nothing anywhere reads `attempts` to cap retries or apply backoff. A row that reliably triggers FLOOD_WAIT will be retried forever, at the front of the queue.
-3. **MediaTracker write-ordering race.** `OnMessageDiscovered` fires the insert as fire-and-forget (`MediaTracker.cs:69`), and `OnStarted` fires the status update as fire-and-forget (`MediaTracker.cs:45`). Nothing orders them. When `OnStarted` wins, the `UPDATE` matches zero rows and the state transition is lost silently.
+3. **MediaTracker write-ordering race.** `OnMessageDiscovered` fires the insert as fire-and-forget (`Scanning/MediaTracker.cs:69`), and `OnStarted` fires the status update as fire-and-forget (`Scanning/MediaTracker.cs:43-46`). Nothing orders them. When `OnStarted` wins, the `UPDATE` matches zero rows and the state transition is lost silently.
 4. **MediaTracker keys on display name.** `_chatIdByName` maps chat *name* → id (`MediaTracker.cs:28,62`). Two chats with the same display name collide and rows are attributed to the wrong chat. Neither `_chatIdByName` nor `_lastMsgIdByChatFile` is ever bounded; `_lastMsgIdByChatFile` only erases on a successful `OnComplete` (`MediaTracker.cs:97`), so every skip, filter-drop or failure leaks an entry for process lifetime.
 5. **`UpdateConfig` mutates live state.** It replaces `factoryService` and `_semaphore` (`TelegramApp.cs:170,176`) while downloads are running. The semaphore swap is defended by capturing the instance (`TelegramApp.cs:346`, good), but the `factoryService` swap is not: `ExecuteByMessageIdAsync` null-checks at `:711` then dereferences at `:714`, and any `PATCH /api/chats/{id}` (`Program.cs:261`) can null-and-replace it in between.
 6. **`Cache=Shared` with WAL.** The connection string sets `Cache=Shared` (`Database.cs:28`) while every operation opens a *new* connection (`MediaRepository` calls `_db.Open()` in all 25 methods). Shared-cache mode introduces table-level locks that surface as `SQLITE_LOCKED`, which — unlike `SQLITE_BUSY` — is **not** retried by `busy_timeout = 5000` (`Database.cs:43`). This is a latent hard-failure under concurrency, and it is unnecessary.

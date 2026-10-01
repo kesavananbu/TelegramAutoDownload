@@ -1,8 +1,11 @@
 # 04 — STRIDE Threat Model: TelegramAutoDownload
 
-**Scope:** commit `554d8e1`, branch `enterprise-readiness`.
-**Method:** read-only source review. Every claim below is anchored to `path:line`. Claims I could
-not verify from source are explicitly labelled **[INFERRED]**.
+**Scope:** commit `1c3753e`, branch `enterprise-readiness` (Composer 2.5 re-run, read-only).
+**Method:** read-only source review — no production code modified, `dotnet build` not run. Every
+claim below is anchored to `path:line`. Claims I could not verify from source are explicitly
+labelled **[INFERRED]**.
+**Note:** At `1c3753e`, the diff from the prior review baseline is documentation and draft
+`.github/workflows/` only; security-relevant application source is unchanged.
 **Companion document:** [`04-findings.md`](./04-findings.md).
 
 ---

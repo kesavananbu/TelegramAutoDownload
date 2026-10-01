@@ -121,7 +121,26 @@ Surviving legal items, reprioritized: add the missing `LICENSE`; add `NOTICE` fo
 
 ## Wave 3 — implementation: IN PROGRESS
 
-**Task 1 (test harness):** [Test harness](3b0057ec-2b94-451e-b5aa-ee8c826a9ed8) dispatched — `NuGet.config`, `RunnerApp.sln`, `TelegramAutoDownload.Headless.Tests`, characterization tests. Awaiting completion report at `docs/assessment/task-01-report.md`.
+**Task 1 (test harness):** First run [cancelled](3b0057ec-2b94-451e-b5aa-ee8c826a9ed8) at user request (no commits). **Re-run with `composer-2.5-fast`** — see new agent id in controller message after dispatch.
+
+**Wave 1 re-run (2026-10-01, `composer-2.5-fast`):** User requested stop + re-run. Prior snapshot in commit `1c3753e`.
+
+| Re-run agent | Status | Notes |
+|---|---|---|
+| [Architecture v2](0be1ceec-c4ef-450f-8c4c-45bd3c346ef3) | Complete | Same D-1…D-5, SQLite keep, 35 ew / Milestone A = 9 ew |
+| [Security v2](de7a97b8-a2ff-4784-a186-1f717789da05) | Complete | 26 findings unchanged; F-01→F-02 chain; F-03+F-23 paired |
+| [Compliance v2](d40621eb-0d90-4724-a6b9-6c518601e799) | Complete | **Free-tool scope**; MIT **Option C** recommended; operational checklist § below |
+| [Ops v2](3c99a1db-9645-422a-8cd3-c21755f4c2db) | Complete | Workflows/docs refreshed (UNVALIDATED) |
+| [Features v2](41e89070-34e0-4907-b0a7-c20475c65363) | Complete | 19/18/8/5 unchanged; 42 headless routes; new risk #10 `PromotePendingToQueuedAsync` |
+| [UI v2](83a922aa-0407-46f2-bd8e-f0caf7d9333a) | Complete | Customization needs **new** APIs: `GET/PUT /api/ui/preferences`, `PATCH /api/chats/bulk`, templates; ~15 d vanilla fixes parallel to Preact migration |
+| [Test harness v2](38a4f447-2f6a-4def-b01a-55e61888774e) | **Complete** | Commits `3072ef3`…`b5165b5`; **22/22** tests; Headless **33.86%** line coverage (was 0%). Controller verified **22 passed** locally. |
+| [Baseline v2](6c0f64d6-f5c1-4a93-9b89-78a5edf09d79) | Pending or in progress | Check working tree |
+
+## Milestone 1 — COMPLETE (2026-10-01)
+
+`NuGet.config`, `RunnerApp.sln`, `TelegramAutoDownload.Headless.Tests`, `docs/assessment/task-01-report.md`. **Next:** Milestone 2 item 4 — unified Telegram API budget (ADR-003).
+
+**Compliance v2 operational checklist (no code yet):** root `LICENSE` (MIT Option C in `docs/compliance/drafts/LICENSE`), `/NOTICE`, `/SECURITY.md`, installer `LicenseFile=`, remove `admin`/`changeme` from compose **examples**, member-export phone warning or gate, Telegram unofficial naming/disclosure.
 
 Serialized implementer → reviewer loops after Task 1. Order: Milestone 2 (account ban, dedup, corruption, session path) → Milestone 3 (security F-01 chain first) → Milestone 4 (UI free wins).
 

@@ -50,13 +50,11 @@ Several of the leads in the original brief were wrong, and the agents said so ra
 
 Sequenced so each step makes the next verifiable. Serialized implementer → reviewer loops; no parallel implementers.
 
-### Milestone 1 — Make change safe (prerequisite for everything else)
+### Milestone 1 — Make change safe ✅ (done on `enterprise-readiness`)
 
-Nothing below this line can be verified without it, because the headless server has no tests and restore is not reproducible.
+Completed in commits `3072ef3`–`b5165b5` ([Test harness v2](38a4f447-2f6a-4def-b01a-55e61888774e)): `NuGet.config`, `RunnerApp.sln`, `TelegramAutoDownload.Headless.Tests` (22 characterization tests, **33.86%** Headless line coverage). Report: `docs/assessment/task-01-report.md`.
 
-1. Commit a `NuGet.config` pinning nuget.org, restore a tracked `.sln`, and create a cross-platform `TelegramAutoDownload.Headless.Tests` project. Baseline restore failed non-deterministically on 5 of 11 projects against the machine's unreachable corporate feed.
-2. Characterization tests over the headless API, the queue state machine, and `WebAuthService` before touching any of them.
-3. Adopt the CI workflows already drafted at `.github/workflows/` — currently unvalidated, never executed.
+**Remaining from Milestone 1:** validate and commit CI workflows under `.github/workflows/` (still UNVALIDATED).
 
 ### Milestone 2 — Stop the bleeding
 
@@ -88,7 +86,8 @@ Ordered by worst realistic outcome. The account-ban defect outranks the security
 ### Milestone 5 — Truthful documentation and repo hygiene
 
 20. Correct the eight false README claims. Either build Quiet Hours or stop documenting it.
-21. Add root `LICENSE` (MIT, from `docs/compliance/drafts/LICENSE`) and `SECURITY.md`; commit `NuGet.config` and CI workflows once validated.
+21. **Legal packaging (free tool, per compliance re-run):** copy MIT **Option C** from `docs/compliance/drafts/LICENSE` to `/LICENSE` (set copyright holder first), ship `/NOTICE` from draft, publish `/SECURITY.md`, wire `installer/setup.iss` `LicenseFile=`, and include notices in release artifacts. Remove default `admin`/`changeme` from `docker-compose.yml` examples.
+22. Commit `NuGet.config`, Headless test project, and CI workflows once validated (after [Test harness v2](38a4f447-2f6a-4def-b01a-55e61888774e) completes).
 
 ## Deferred decision
 

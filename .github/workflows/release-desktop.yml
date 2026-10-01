@@ -21,8 +21,8 @@
 #                     missing the draft is DELETED and the job fails. The release
 #                     is only un-drafted after that check passes.
 #
-# STATUS: UNVALIDATED — authored without execution (no `dotnet build`/`publish`
-#         permitted in this workspace). See docs/ops/05-cicd.md.
+# STATUS: UNVALIDATED — Phase 5 re-run (Composer 2.5), 2026-10-01. No dotnet
+#         publish executed in authoring workspace. See docs/ops/05-cicd.md §5.
 # ─────────────────────────────────────────────────────────────────────────────
 name: Release (Desktop)
 

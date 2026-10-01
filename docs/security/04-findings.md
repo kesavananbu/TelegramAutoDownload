@@ -1,7 +1,9 @@
 # 04 — Security Findings: TelegramAutoDownload
 
-**Scope:** commit `554d8e1`, branch `enterprise-readiness`. Read-only review; no file outside
-`docs/security/` was modified.
+**Scope:** commit `1c3753e`, branch `enterprise-readiness` (Composer 2.5 re-run). Read-only review;
+no file outside `docs/security/` was modified; `dotnet build` not run.
+**Note:** HEAD adds assessment docs and draft CI workflows; application source paths cited below
+are unchanged from the prior Phase 4 pass.
 **Companion document:** [`04-threat-model.md`](./04-threat-model.md) — read §1.1 first, it corrects
 the "default deployment" assumption that drives the *Reachable by default* column below.
 

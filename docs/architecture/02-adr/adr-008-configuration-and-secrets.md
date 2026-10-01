@@ -1,7 +1,8 @@
 # ADR-008 — Separate configuration from secrets; encrypt key material at rest
 
 - **Status:** Proposed
-- **Date:** 2026-09-30
+- **Date:** 2026-10-01
+- **Review:** Composer 2.5 re-run — read-only verification on `enterprise-readiness` @ `1c3753e`; no build
 - **Deciders:** Architecture, Security
 - **Related:** ADR-001, ADR-007
 

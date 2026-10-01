@@ -1,26 +1,65 @@
 DRAFT — NOT ADOPTED. See ./README.md before using this file.
 
-This file presents TWO MUTUALLY EXCLUSIVE OPTIONS. The owner must choose one, have it
-reviewed by counsel, and only then place the chosen text at the repository root as /LICENSE.
+**Product direction (2026-10-01):** free personal tool — **MIT at repository root is the
+recommended adoption path**, matching `README.md:341-343`.
 
-Background (see ../06-compliance.md §1.1-1.2):
-  - README.md currently states "MIT" but NO LICENSE FILE EXISTS. No licence has been
-    effectively granted.
-  - The MIT licence expressly permits anyone to "sublicense, and/or sell copies of the
-    Software". It is therefore incompatible with selling this as a commercial product:
-    a customer or competitor could lawfully resell it, or strip the licence-key check.
-  - Before adopting EITHER option, Legal Questions 1 and 2 must be answered: whether the
-    owner can relicense given prior releases claiming MIT, and whether any third-party
-    contributions exist that would require a contributor licence agreement.
+This file contains:
+
+  - **OPTION C — MIT License (RECOMMENDED)** — copy to `/LICENSE` after setting copyright line
+  - **OPTION A — Proprietary EULA (ARCHIVED)** — retained only if commercial scope returns
+  - **OPTION B — Open-core / dual licence (NOT RECOMMENDED)**
+
+Background (see ../06-compliance.md §1.1):
+  - README claims MIT but **no root LICENSE file exists** — grant gap for users and packagers.
+  - Prior commercial analysis warned against accidental MIT if selling the product; that goal
+    is **withdrawn** (`docs/product/01-product-definition.md`).
+  - Before adoption: confirm contributor rights if outside code was merged (Legal Question 1).
 
 ================================================================================
-OPTION A — PROPRIETARY END-USER LICENCE AGREEMENT  (RECOMMENDED)
+OPTION C — MIT LICENSE  (RECOMMENDED FOR FREE PROJECT)
 ================================================================================
 
-Recommended because it is the only option consistent with the self-hosted commercial model
-recommended in ../../gtm/07-marketplace-readiness.md §1. Source may still be published for
-transparency ("source-available"); this licence does not grant the right to redistribute,
-resell, or remove licensing controls.
+Copy the text below to `/LICENSE`. Replace `[YEAR]` and `[COPYRIGHT HOLDER]`. Keep
+`NOTICE` separate for Apache-2.0 and GPL ffmpeg attributions (`NOTICE.md` draft).
+
+---
+
+MIT License
+
+Copyright (c) [YEAR] [COPYRIGHT HOLDER]
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+User-facing addendum (README or SECURITY.md — not part of licence text):
+
+  - Not affiliated with Telegram; users must comply with Telegram ToS and API terms.
+  - Automated account use may result in account restriction or ban — user accepts risk.
+  - Third-party components (yt-dlp, ffmpeg, etc.) have separate licences — see NOTICE.
+
+================================================================================
+OPTION A — PROPRIETARY END-USER LICENCE AGREEMENT  (ARCHIVED — COMMERCIAL)
+================================================================================
+
+**Not aligned with current product direction.** Retained as draft if a paid edition returns.
+Was intended for self-hosted commercial distribution with licence-key enforcement.
 
 --------------------------------------------------------------------------------
 
@@ -180,8 +219,8 @@ Contact: [LEGAL EMAIL] · [LEGAL ENTITY NAME], [REGISTERED ADDRESS]
 OPTION B — OPEN-CORE / DUAL LICENCE  (NOT RECOMMENDED HERE)
 ================================================================================
 
-Presented for completeness. ../../gtm/07-marketplace-readiness.md §1 recommends against it
-for this codebase, primarily because the plugin system is a runtime DLL loader
+Presented for completeness. Not recommended for the free MIT project. The plugin system is a
+runtime DLL loader
 (TelegramAutoDownload.csproj:43-65), which makes an enforceable licence boundary between
 "open core" and "paid plugin" impractical — the community would simply publish a free
 replacement plugin.
@@ -209,15 +248,14 @@ It arguably increases content-liability exposure by publishing the source of the
 DMCA §1201-exposed URL-download orchestration (see ../06-compliance.md §4.2).
 
 ================================================================================
-WHAT MUST NOT BE DONE
+ADOPTION CHECKLIST (FREE MIT PROJECT)
 ================================================================================
 
-Do NOT simply add an MIT LICENSE file to match the current README. That would:
-  - irrevocably grant every existing and future user the right to resell the Software and to
-    remove any licence-key enforcement, destroying the commercial model; and
-  - be extremely difficult to reverse, because MIT grants are perpetual and irrevocable for
-    versions already distributed under them.
+1. Set copyright holder name in Option C text.
+2. Copy Option C to `/LICENSE`; ensure README § License matches.
+3. Adopt `NOTICE.md` → `/NOTICE` and include in GitHub Release artifacts and installer.
+4. Point `installer/setup.iss` `LicenseFile=` at MIT or a combined licence+NOTICE file.
+5. Publish `SECURITY.md` at repository root.
 
-If the owner's genuine intent is a free and open project with no commercial model, MIT is a
-fine choice — but that decision should be made deliberately, not inherited from a one-word
-README line.
+If a **paid** product returns: do not assume MIT can be retracted for versions already
+released under MIT; use Option A forward-only after counsel review.

@@ -1,7 +1,8 @@
 # ADR-006 — Versioned, supervised, out-of-process plugin contract
 
 - **Status:** Proposed
-- **Date:** 2026-09-30
+- **Date:** 2026-10-01
+- **Review:** Composer 2.5 re-run — read-only verification on `enterprise-readiness` @ `1c3753e`; no build
 - **Deciders:** Architecture
 - **Related:** ADR-004, ADR-005
 
