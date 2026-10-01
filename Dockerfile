@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1.7
 
-# ── Build stage ──────────────────────────────────────────────────────────────
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+# ── Build stage (always on the builder CPU — avoids QEMU segfaults in dotnet restore) ──
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+ARG TARGETARCH
 WORKDIR /src
 
 COPY BasePlugin/BasePlugins.csproj                              BasePlugin/
@@ -23,8 +24,15 @@ COPY SocialMediaPlugin/                       SocialMediaPlugin/
 COPY TorrentPlugin/                           TorrentPlugin/
 COPY TelegramAutoDownload.Headless/           TelegramAutoDownload.Headless/
 
-RUN dotnet publish TelegramAutoDownload.Headless/TelegramAutoDownload.Headless.csproj \
-    -c Release -o /out --no-self-contained
+# Cross-compile managed output + RID-specific native assets (e.g. SQLite) per target arch.
+RUN case "$TARGETARCH" in \
+      amd64) DOTNET_ARCH=x64 ;; \
+      arm64) DOTNET_ARCH=arm64 ;; \
+      arm)   DOTNET_ARCH=arm ;; \
+      *) echo "Unsupported TARGETARCH=$TARGETARCH"; exit 1 ;; \
+    esac \
+ && dotnet publish TelegramAutoDownload.Headless/TelegramAutoDownload.Headless.csproj \
+    -c Release -o /out --no-self-contained -a "$DOTNET_ARCH" /p:UseAppHost=false
 
 # ── Runtime stage ────────────────────────────────────────────────────────────
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
