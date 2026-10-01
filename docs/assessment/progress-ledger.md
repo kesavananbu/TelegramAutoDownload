@@ -134,7 +134,7 @@ Surviving legal items, reprioritized: add the missing `LICENSE`; add `NOTICE` fo
 | [Features v2](41e89070-34e0-4907-b0a7-c20475c65363) | Complete | 19/18/8/5 unchanged; 42 headless routes; new risk #10 `PromotePendingToQueuedAsync` |
 | [UI v2](83a922aa-0407-46f2-bd8e-f0caf7d9333a) | Complete | Customization needs **new** APIs: `GET/PUT /api/ui/preferences`, `PATCH /api/chats/bulk`, templates; ~15 d vanilla fixes parallel to Preact migration |
 | [Test harness v2](38a4f447-2f6a-4def-b01a-55e61888774e) | **Complete** | Commits `3072ef3`…`b5165b5`; **22/22** tests; Headless **33.86%** line coverage (was 0%). Controller verified **22 passed** locally. |
-| [Baseline v2](6c0f64d6-f5c1-4a93-9b89-78a5edf09d79) | Pending or in progress | Check working tree |
+| [Baseline v2](6c0f64d6-f5c1-4a93-9b89-78a5edf09d79) | Complete | 12/12 build, **420** tests (415 pass), prod **10.63%** lines; Headless **31.59%** via Headless.Tests run |
 
 ## Milestone 1 — COMPLETE (2026-10-01)
 
