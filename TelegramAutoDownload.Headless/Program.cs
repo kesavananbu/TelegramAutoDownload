@@ -639,3 +639,5 @@ internal record ChatDtoView(
         c.EnabledPlugins ?? new Dictionary<string, bool>(),
         c.MembersCount, c.Muted);
 }
+
+public partial class Program { }
