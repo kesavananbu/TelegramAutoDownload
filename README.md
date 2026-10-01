@@ -358,11 +358,10 @@ Images are built for:
 |---|---|
 | `linux/amd64` | Intel/AMD Synology, most Linux PCs and VPS |
 | `linux/arm64` | ARM64 Synology (e.g. Plus series), Apple Silicon Linux VMs, Raspberry Pi 64-bit OS |
-| `linux/arm/v7` | Older 32-bit ARM Synology models and armhf boards |
 
 Docker automatically pulls the correct architecture from the manifest — you do not pick a platform tag manually.
 
-**Why ARMv7 is included:** The runtime base image (`mcr.microsoft.com/dotnet/aspnet:8.0`) publishes an official `linux/arm/v7` variant, and the app is .NET 8 managed code with `yt-dlp` / `ffmpeg` from Debian packages (no x86-only native dependencies in the app itself). If you hit a device-specific issue on very old ARM hardware, prefer `linux/arm64` or `linux/amd64` models, or open an issue with logs.
+**ARMv7 (`linux/arm/v7`):** Not published from CI. The .NET runtime image supports armhf, but installing `ffmpeg`/`yt-dlp` under QEMU on GitHub runners often fails (process killed with exit code 9). Use **amd64** or **arm64** Synology models, or build locally on real 32-bit ARM hardware: `docker buildx build --platform linux/arm/v7 -t telegram-auto-download:armv7 .`
 
 ### Run with Docker
 
@@ -411,7 +410,7 @@ If the package is **private**, configure registry authentication in Container Ma
 
 ### Volume permissions (Synology / NAS)
 
-The container runs as UID **1000** / GID **1000** by default (`app` user in the Dockerfile). Bind-mounted host directories must be writable by that user, or you can override the runtime user in Compose:
+The container runs as the official ASP.NET **`app`** user (**UID/GID 1654** in `mcr.microsoft.com/dotnet/aspnet:8.0`). Bind-mounted host directories must be writable by that user, or you can override the runtime user in Compose:
 
 ```yaml
 user: "1029:100"   # example DSM user UID:GID
@@ -427,7 +426,7 @@ Persistent paths inside the container:
 On the NAS, create the host folders and assign ownership to match the container user, for example (SSH, adjust UID/GID):
 
 ```bash
-sudo chown -R 1000:1000 /volume1/docker/telegram-auto-download/data
+sudo chown -R 1654:1654 /volume1/docker/telegram-auto-download/data
 ```
 
 Avoid `chmod 777`; use ownership aligned to the `user:` you run as.
@@ -447,7 +446,7 @@ Multi-platform build with Buildx (requires QEMU for non-native arches):
 
 ```bash
 docker buildx create --use --name tad-builder 2>/dev/null || docker buildx use tad-builder
-docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t telegram-auto-download:local --load .
+docker buildx build --platform linux/amd64,linux/arm64 -t telegram-auto-download:local --load .
 ```
 
 `--load` only works for a single platform; omit `--load` and use `--push` to publish to a registry, or build one platform at a time for local testing.

@@ -25,4 +25,4 @@ services:
       - ${DATA_VOLUME:-./data}:/data
       - ${DOWNLOADS_VOLUME:-./downloads}:/downloads
     # Optional: match host UID/GID on Synology/NAS (example: user: "1029:100")
-    # user: "1000:1000"
+    # user: "1654:1654"   # default app user in mcr.microsoft.com/dotnet/aspnet:8.0
