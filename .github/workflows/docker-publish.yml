@@ -1,0 +1,93 @@
+# Build and publish the Headless container image to GitHub Container Registry (GHCR).
+# WPF desktop releases remain in release-desktop.yml.
+name: Docker Publish
+
+on:
+  pull_request:
+    branches: [main, master, enterprise-readiness]
+  push:
+    branches: [main, master, enterprise-readiness]
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: docker-publish-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build:
+    name: Build & publish image
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Normalise GHCR image name (lowercase)
+        shell: bash
+        run: echo "IMAGE=${{ env.REGISTRY }}/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata (tags & OCI labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
+          labels: |
+            org.opencontainers.image.title=Telegram Auto Download (Headless)
+            org.opencontainers.image.description=Monitors Telegram chats and auto-downloads media via a web dashboard (container/headless deployment)
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.licenses=MIT
+
+      - name: Build (and push on non-PR events)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### Docker image"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Image | \`${IMAGE}\` |"
+            echo "| Event | \`${{ github.event_name }}\` |"
+            echo "| Push | \`${{ github.event_name != 'pull_request' }}\` |"
+            echo "| Platforms | \`linux/amd64\`, \`linux/arm64\`, \`linux/arm/v7\` |"
+            if [ "${{ github.event_name }}" != "pull_request" ]; then
+              echo "| Tags | \`${{ steps.meta.outputs.tags }}\` |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

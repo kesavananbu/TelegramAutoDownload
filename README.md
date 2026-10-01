@@ -338,6 +338,126 @@ TelegramAutoDownload (WPF, entry point)
 
 ---
 
+## Docker (Headless / NAS)
+
+The **headless** deployment runs the web dashboard and download engine in a Linux container. It is the recommended path for **Synology Container Manager**, other NAS devices, and headless Linux servers. The WPF desktop app is not included in the container image.
+
+Published images:
+
+```bash
+docker pull ghcr.io/OWNER/telegramautodownload:latest
+```
+
+Replace `OWNER` with your GitHub user or org (lowercase). For the upstream repository, use `ghcr.io/il90il90/telegramautodownload:latest`.
+
+### Supported platforms
+
+Images are built for:
+
+| Platform | Typical hardware |
+|---|---|
+| `linux/amd64` | Intel/AMD Synology, most Linux PCs and VPS |
+| `linux/arm64` | ARM64 Synology (e.g. Plus series), Apple Silicon Linux VMs, Raspberry Pi 64-bit OS |
+| `linux/arm/v7` | Older 32-bit ARM Synology models and armhf boards |
+
+Docker automatically pulls the correct architecture from the manifest — you do not pick a platform tag manually.
+
+**Why ARMv7 is included:** The runtime base image (`mcr.microsoft.com/dotnet/aspnet:8.0`) publishes an official `linux/arm/v7` variant, and the app is .NET 8 managed code with `yt-dlp` / `ffmpeg` from Debian packages (no x86-only native dependencies in the app itself). If you hit a device-specific issue on very old ARM hardware, prefer `linux/arm64` or `linux/amd64` models, or open an issue with logs.
+
+### Run with Docker
+
+```bash
+docker run -d --name telegram-auto-download \
+  -p 8080:8080 \
+  -e WEB_USERNAME=admin \
+  -e WEB_PASSWORD='your-secure-password' \
+  -e APP_ID=12345678 \
+  -e API_HASH=your_api_hash \
+  -v "$(pwd)/data:/data" \
+  -v "$(pwd)/downloads:/downloads" \
+  ghcr.io/il90il90/telegramautodownload:latest
+```
+
+Open `http://localhost:8080`, sign in with the web credentials, then complete Telegram login and chat setup in the UI.
+
+### Docker Compose
+
+Copy `.env.example` to `.env`, set secrets and paths, then:
+
+```bash
+docker compose up -d
+```
+
+The compose file pulls `GHCR_IMAGE` (see `.env.example`) and does **not** use `build:` — Synology and other hosts should consume the prebuilt GHCR image.
+
+### Synology Container Manager
+
+1. Open **Container Manager** → **Project** → **Create** (or import `docker-compose.yml`).
+2. Set **Volumes** to persistent folders on the NAS, for example:
+   - `/volume1/docker/telegram-auto-download/data` → `/data`
+   - `/volume1/homes/work/telegram-downloads` → `/downloads`
+3. Set **Environment** variables (`WEB_USERNAME`, `WEB_PASSWORD`, optional `APP_ID` / `API_HASH`, optional `TZ` such as `Asia/Kolkata`).
+4. Map host port **8080** (or another port via `HOST_PORT` in `.env`).
+5. Start the project and open the web UI on the mapped port.
+6. Confirm status: Container Manager health (if shown), or `curl http://NAS_IP:8080/api/web-auth/status`.
+
+Intel/AMD Synology units use `linux/amd64`; ARM64 Synology units use `linux/arm64` — both are selected automatically from GHCR.
+
+### Private vs public GHCR packages
+
+If the package on GHCR is **public**, Synology and Docker can pull without extra registry login.
+
+If the package is **private**, configure registry authentication in Container Manager (or `docker login ghcr.io` on the host) using a GitHub account or PAT with `read:packages`. Do not put tokens or passwords in `docker-compose.yml`.
+
+### Volume permissions (Synology / NAS)
+
+The container runs as UID **1000** / GID **1000** by default (`app` user in the Dockerfile). Bind-mounted host directories must be writable by that user, or you can override the runtime user in Compose:
+
+```yaml
+user: "1029:100"   # example DSM user UID:GID
+```
+
+Persistent paths inside the container:
+
+| Mount | Purpose |
+|---|---|
+| `/data` | SQLite DB (`tad.db`), config, logs, web auth, Telegram session under `/data/TelegramAutoDownload/` |
+| `/downloads` | Downloaded media (default download root unless changed in settings) |
+
+On the NAS, create the host folders and assign ownership to match the container user, for example (SSH, adjust UID/GID):
+
+```bash
+sudo chown -R 1000:1000 /volume1/docker/telegram-auto-download/data
+```
+
+Avoid `chmod 777`; use ownership aligned to the `user:` you run as.
+
+### Local image build
+
+```bash
+docker build -t telegram-auto-download:local .
+docker run --rm -p 8080:8080 \
+  -e WEB_AUTH_ENABLED=false \
+  -v "$(pwd)/data:/data" \
+  -v "$(pwd)/downloads:/downloads" \
+  telegram-auto-download:local
+```
+
+Multi-platform build with Buildx (requires QEMU for non-native arches):
+
+```bash
+docker buildx create --use --name tad-builder 2>/dev/null || docker buildx use tad-builder
+docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t telegram-auto-download:local --load .
+```
+
+`--load` only works for a single platform; omit `--load` and use `--push` to publish to a registry, or build one platform at a time for local testing.
+
+### CI
+
+`.github/workflows/docker-publish.yml` builds on pull requests (no push to GHCR) and pushes to `ghcr.io/<owner>/<repo>` on merges to the main branches and on version tags `v*.*.*` (`1.2.3`, `1.2`, `1`, and `latest` on the default branch).
+
+---
+
 ## License
 
 MIT

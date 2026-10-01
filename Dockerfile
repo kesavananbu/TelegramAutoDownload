@@ -4,7 +4,6 @@
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
-# Copy only csproj files first for better layer caching
 COPY BasePlugin/BasePlugins.csproj                              BasePlugin/
 COPY Logger/Logger.csproj                                       Logger/
 COPY TelegramClient/TelegramClient.csproj                       TelegramClient/
@@ -15,7 +14,6 @@ COPY TorrentPlugin/TorrentPlugin.csproj                         TorrentPlugin/
 COPY TelegramAutoDownload.Headless/TelegramAutoDownload.Headless.csproj TelegramAutoDownload.Headless/
 RUN dotnet restore TelegramAutoDownload.Headless/TelegramAutoDownload.Headless.csproj
 
-# Copy the rest of the source and publish
 COPY BasePlugin/                              BasePlugin/
 COPY Logger/                                  Logger/
 COPY TelegramClient/                          TelegramClient/
@@ -29,25 +27,37 @@ RUN dotnet publish TelegramAutoDownload.Headless/TelegramAutoDownload.Headless.c
     -c Release -o /out --no-self-contained
 
 # ── Runtime stage ────────────────────────────────────────────────────────────
-FROM mcr.microsoft.com/dotnet/aspnet:8.0
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 ENV DEBIAN_FRONTEND=noninteractive
+
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      yt-dlp ffmpeg ca-certificates \
- && rm -rf /var/lib/apt/lists/*
+      yt-dlp ffmpeg ca-certificates curl \
+ && rm -rf /var/lib/apt/lists/* \
+ && groupadd --system --gid 1000 app \
+ && useradd --system --uid 1000 --gid app --home-dir /app --shell /usr/sbin/nologin app
 
 WORKDIR /app
 COPY --from=build /out .
+RUN chown -R app:app /app
 
-# All user-writable state under /data so it survives container restarts.
-# SpecialFolder.ApplicationData on Linux honours XDG_CONFIG_HOME → puts session.dat in /data/TelegramAutoDownload/
+# Writable state lives on mounted volumes (/data, /downloads).
+# XDG_CONFIG_HOME puts WTelegram session under /data/TelegramAutoDownload/ on Linux.
 ENV DATA_DIR=/data \
     DOWNLOADS_DIR=/downloads \
     XDG_CONFIG_HOME=/data \
     LISTEN_URL=http://0.0.0.0:8080 \
     ASPNETCORE_URLS=http://0.0.0.0:8080
 
+RUN mkdir -p /data /downloads \
+ && chown -R app:app /data /downloads
+
 VOLUME ["/data", "/downloads"]
 EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD ["curl", "-fsS", "http://127.0.0.1:8080/api/web-auth/status"]
+
+USER app
 
 ENTRYPOINT ["dotnet", "TelegramAutoDownload.Headless.dll"]

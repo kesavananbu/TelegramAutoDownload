@@ -1,30 +1,28 @@
-networks:
-    internal:
-      external: true
-
+# Pull the prebuilt multi-arch image from GHCR (recommended for Synology Container Manager
+# and other hosts). Replace GHCR_IMAGE if you use a fork or pin a version tag.
 services:
   telegram-auto-download:
-    build: .
-    image: telegram-auto-download:latest
-    container_name: telegram_downloader
+    image: ${GHCR_IMAGE:-ghcr.io/il90il90/telegramautodownload:latest}
+    container_name: telegram-auto-download
     restart: unless-stopped
-    user: "1029:100"
-    #ports:
-    #  - "8080:8080"
+    ports:
+      - "${HOST_PORT:-8080}:8080"
     environment:
-      # Web dashboard login (NPM-style gate — change these before exposing on your network).
-      WEB_USERNAME: "admin"
-      WEB_PASSWORD: "changeme"
-      # Optional — if you'd rather not set credentials from the web UI on first run,
-      # uncomment and put yours here (get them from https://my.telegram.org).
-      # APP_ID: "12345678"
-      # API_HASH: "abcdef1234567890abcdef1234567890"
       DATA_DIR: /data
       DOWNLOADS_DIR: /downloads
-      TZ: Asia/Kolkata
+      LISTEN_URL: http://0.0.0.0:8080
+      WEB_USERNAME: ${WEB_USERNAME:-admin}
+      WEB_PASSWORD: ${WEB_PASSWORD:-changeme}
+      WEB_AUTH_ENABLED: ${WEB_AUTH_ENABLED:-true}
+      WEB_SESSION_DAYS: ${WEB_SESSION_DAYS:-7}
+      WEB_AUTH_SECURE_COOKIES: ${WEB_AUTH_SECURE_COOKIES:-false}
+      APP_ID: ${APP_ID:-}
+      API_HASH: ${API_HASH:-}
+      BOT_TOKEN: ${BOT_TOKEN:-}
+      CHAT_ID: ${CHAT_ID:-}
+      TZ: ${TZ:-}
     volumes:
-      - /volume1/docker/telegram_downloader:/data
-      - /volume1/homes/work/telegram_downloader:/downloads
-      - /etc/localtime:/etc/localtime:ro
-    networks:
-      - internal
+      - ${DATA_VOLUME:-./data}:/data
+      - ${DOWNLOADS_VOLUME:-./downloads}:/downloads
+    # Optional: match host UID/GID on Synology/NAS (example: user: "1029:100")
+    # user: "1000:1000"
