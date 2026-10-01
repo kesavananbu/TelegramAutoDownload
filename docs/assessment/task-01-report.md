@@ -65,4 +65,8 @@ Baseline comparison: Headless was **0%** with no test reference (`docs/assessmen
 
 ## Commits (Task 1)
 
-Recorded after push — see git log on `enterprise-readiness` for hashes tagged in the controller handoff.
+| Hash | Summary |
+|------|---------|
+| `3072ef3` | `NuGet.config` (nuget.org only) |
+| `a94eb00` | `RunnerApp.sln` + `public partial class Program` |
+| `06633cc` | `TelegramAutoDownload.Headless.Tests` + this report |
