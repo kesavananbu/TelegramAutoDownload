@@ -1,0 +1,206 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Scheduled maintenance — the "operational burden" automation.
+#
+# Four independent sweeps, each of which maps to a known day-one support risk:
+#   1. base-image-cve      — CVEs land in the published image long after the
+#                            commit that built it (base: aspnet:8.0, Dockerfile:32).
+#   2. dependency-cve      — new advisories against pinned NuGet versions.
+#   3. ytdlp-canary        — yt-dlp breaks whenever a site changes its player.
+#                            This is the single most frequent functional failure
+#                            for the SocialMedia/YouTube plugins. The container
+#                            installs yt-dlp from apt (Dockerfile:36) and is
+#                            therefore FROZEN at image-build time, while the
+#                            desktop app self-updates yt-dlp on every launch
+#                            (Services/YtdlpService.cs:41-108). This job detects
+#                            the drift and forces a container rebuild.
+#   4. release-audit       — retroactively enforces the both-artifacts rule
+#                            (.cursor/rules/release-process.mdc:10-15) across
+#                            every published release.
+#
+# STATUS: UNVALIDATED — authored without execution.
+# ─────────────────────────────────────────────────────────────────────────────
+name: Scheduled Maintenance
+
+on:
+  schedule:
+    - cron: "0 4 * * *" # daily 04:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  security-events: write
+  packages: read
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/telegram-auto-download
+
+jobs:
+  base-image-cve:
+    name: Published image CVE sweep
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Normalise image name
+        run: echo "IMAGE_NAME=$(echo '${{ env.IMAGE_NAME }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Trivy scan of :latest (advisory — reports, does not block)
+        id: trivy
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          format: sarif
+          output: trivy-latest.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+
+      - name: Upload SARIF
+        if: always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-latest.sarif
+          category: trivy-scheduled
+
+  dependency-cve:
+    name: NuGet advisory sweep
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Synthesise CI solution
+        shell: pwsh
+        run: |
+          dotnet new sln -n TelegramAutoDownload-CI
+          Get-ChildItem -Recurse -Filter *.csproj |
+            Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' } |
+            ForEach-Object { dotnet sln TelegramAutoDownload-CI.sln add $_.FullName }
+          dotnet restore TelegramAutoDownload-CI.sln
+
+      - name: Scan and open an issue on High/Critical
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $out = dotnet list TelegramAutoDownload-CI.sln package --vulnerable --include-transitive 2>&1 | Out-String
+          Write-Host $out
+          if ($out -match '(?im)^\s*>\s.*\b(High|Critical)\b') {
+            $title = 'chore(security): High/Critical NuGet advisories detected'
+            $existing = gh issue list --state open --search "$title in:title" --json number --jq '.[0].number'
+            $fence = '```'   # single quotes: backticks are literal in PowerShell
+            @('Automated daily sweep found vulnerable NuGet packages.', '', $fence, $out, $fence) |
+              Set-Content -Encoding utf8 nuget-advisory.md
+            if ($existing) {
+              gh issue comment $existing --body-file nuget-advisory.md
+            } else {
+              gh issue create --title $title --body-file nuget-advisory.md --label security
+            }
+            Write-Warning 'Vulnerable packages reported via GitHub issue.'
+          }
+
+  ytdlp-canary:
+    name: yt-dlp drift canary
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare upstream yt-dlp against the version baked into the image
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          upstream=$(curl -fsSL https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest | jq -r .tag_name)
+          echo "Upstream yt-dlp: $upstream"
+
+          # The runtime stage installs yt-dlp from Debian apt (Dockerfile:36),
+          # which lags upstream badly and never updates inside a running container.
+          baked=$(docker run --rm --entrypoint sh \
+                    "ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')/telegram-auto-download:latest" \
+                    -c 'yt-dlp --version 2>/dev/null || echo unknown' | tr -d '\r') || baked=unavailable
+          echo "Image yt-dlp: $baked"
+
+          {
+            echo "### yt-dlp drift"
+            echo ""
+            echo "| Source | Version |"
+            echo "|---|---|"
+            echo "| upstream latest | \`$upstream\` |"
+            echo "| container image | \`$baked\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          norm_up=${upstream#v}
+          if [ "$baked" != "$norm_up" ] && [ "$baked" != "unknown" ] && [ "$baked" != "unavailable" ]; then
+            title="ops: container yt-dlp ($baked) is behind upstream ($norm_up)"
+            existing=$(gh issue list --state open --search "container yt-dlp is behind upstream in:title" --json number --jq '.[0].number' || true)
+
+            {
+              printf 'The yt-dlp binary inside the published container image is `%s`; upstream latest is `%s`.\n\n' "$baked" "$norm_up"
+              printf '**Why this matters:** yt-dlp breaks whenever a supported site changes its player. A stale yt-dlp is the most common cause of "social media / YouTube links stopped downloading" tickets. The desktop app self-updates yt-dlp on launch (`TelegramAutoDownload/Services/YtdlpService.cs:41-108`); the container does **not** — it gets whatever Debian apt provided at image build time (`Dockerfile:34-37`).\n\n'
+              printf '**Remediation:** re-run the `Container Image` workflow via workflow_dispatch, then roll the deployment to the new digest.\n\n'
+              printf '**Permanent fix (recommended):** install yt-dlp from its upstream release in the Dockerfile instead of apt, and add a container-side self-update path mirroring the desktop behaviour. See `docs/ops/05-operations.md` runbook R6.\n'
+            } > ytdlp-issue.md
+
+            if [ -n "${existing:-}" ]; then
+              gh issue comment "$existing" --body-file ytdlp-issue.md
+            else
+              gh issue create --title "$title" --body-file ytdlp-issue.md --label ops || true
+            fi
+          fi
+
+  release-audit:
+    name: Release both-artifacts audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # Retroactive enforcement of .cursor/rules/release-process.mdc:10-15.
+      # A release missing either artifact silently breaks self-update for half
+      # the installed base (AutoUpdateService.cs:88-99).
+      - name: Audit the last 20 published releases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          bad=""
+          tags=$(gh release list --limit 20 --exclude-drafts --json tagName --jq '.[].tagName')
+          for tag in $tags; do
+            assets=$(gh release view "$tag" --json assets --jq '.assets[].name')
+            has_setup=$(echo "$assets" | grep -c '_Setup\.exe$' || true)
+            has_zip=$(echo "$assets" | grep -c '_Portable\.zip$' || true)
+            if [ "$has_setup" -eq 0 ] || [ "$has_zip" -eq 0 ]; then
+              bad="${bad}\n- \`${tag}\` — Setup.exe: ${has_setup}, Portable.zip: ${has_zip}"
+            fi
+            printf '%-12s setup=%s zip=%s\n' "$tag" "$has_setup" "$has_zip"
+          done
+
+          if [ -n "$bad" ]; then
+            {
+              echo "### :x: Releases violating the both-artifacts rule"
+              echo -e "$bad"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::One or more published releases are missing a required artifact."
+            echo "::error::Do NOT fix this by deleting the other artifact (release-process.mdc:35) — re-upload the missing one."
+            exit 1
+          fi
+          echo "All audited releases carry both artifacts." >> "$GITHUB_STEP_SUMMARY"

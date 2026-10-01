@@ -1,0 +1,222 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Container pipeline — build the Headless image, scan it, sign it, publish to
+# GHCR with immutable tags, and emit an SBOM + build provenance attestation.
+#
+# Only TelegramAutoDownload.Headless ships in the image (Dockerfile:15,28); the
+# WPF desktop app is released by release-desktop.yml.
+#
+# STATUS: UNVALIDATED — authored without execution.
+#         See docs/ops/05-cicd.md § "First-run validation checklist".
+# ─────────────────────────────────────────────────────────────────────────────
+name: Container Image
+
+on:
+  push:
+    branches: [main, master, enterprise-readiness]
+    tags: ["v*.*.*"]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+      - "installer/**"
+  workflow_dispatch:
+    inputs:
+      push_image:
+        description: "Push to GHCR (false = build + scan only)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+  security-events: write
+
+concurrency:
+  group: container-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  # GHCR requires an all-lowercase path; ${{ github.repository }} is already
+  # lowercase for this repo but we normalise defensively in the metadata step.
+  IMAGE_NAME: ${{ github.repository }}/telegram-auto-download
+
+jobs:
+  build-scan-push:
+    name: Build, scan & publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Normalise image name to lowercase
+        shell: bash
+        run: echo "IMAGE_NAME=$(echo '${{ env.IMAGE_NAME }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tagging policy (immutable-first):
+      #   sha-<short>        always — the only tag production should ever pin
+      #   <branch>           branch head, for dev/staging convenience
+      #   x.y.z / x.y / x    on v* tags
+      #   latest             default branch only, never referenced by prod compose
+      - name: Derive tags & labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,format=short,prefix=sha-
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=TelegramAutoDownload Headless
+            org.opencontainers.image.description=Monitors Telegram chats and auto-downloads media (headless/container surface)
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.documentation=https://github.com/${{ github.repository }}/blob/main/docs/ops/05-operations.md
+            org.opencontainers.image.licenses=NOASSERTION
+
+      # ── Scan gate: build amd64 locally FIRST, scan, and only then push. ──
+      - name: Build amd64 image for scanning
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: tad-scan:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+      - name: Trivy — OS + library CVEs (blocking on CRITICAL/HIGH)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: tad-scan:${{ github.sha }}
+          scan-type: image
+          format: table
+          severity: CRITICAL,HIGH
+          # ignore-unfixed: a Debian base (mcr.microsoft.com/dotnet/aspnet:8.0,
+          # Dockerfile:32) always carries unfixed advisories. Blocking on those
+          # would make every build red with no remediation available.
+          ignore-unfixed: true
+          exit-code: "1"
+          vuln-type: os,library
+
+      - name: Trivy — SARIF for code scanning (non-blocking, full severity)
+        if: always()
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: tad-scan:${{ github.sha }}
+          scan-type: image
+          format: sarif
+          output: trivy-image.sarif
+          severity: CRITICAL,HIGH,MEDIUM
+          ignore-unfixed: false
+
+      - name: Upload Trivy SARIF
+        if: always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
+
+      - name: Trivy — IaC/config scan (Dockerfile, compose)
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: .
+          format: table
+          severity: CRITICAL,HIGH
+
+      # ── Publish multi-arch. arm64 matters: the documented deployment is a
+      #    Synology NAS bind-mount setup (docker-compose.yml:26-28). ──
+      - name: Build & push multi-arch image
+        id: push
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.push_image }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: mode=max
+          sbom: true
+
+      - name: Generate SBOM (SPDX)
+        if: steps.push.outcome == 'success'
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}
+          format: spdx-json
+          artifact-name: sbom-container-spdx.json
+          upload-artifact: true
+
+      - name: Attest build provenance
+        if: steps.push.outcome == 'success'
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      # OPTIONAL — keyless cosign signature. Enable once the consuming
+      # environment actually verifies signatures; unverified signatures are
+      # security theatre. Requires no secrets (OIDC).
+      - name: Install cosign
+        if: steps.push.outcome == 'success' && vars.ENABLE_COSIGN == 'true'
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign image (keyless OIDC)
+        if: steps.push.outcome == 'success' && vars.ENABLE_COSIGN == 'true'
+        shell: bash
+        run: |
+          cosign sign --yes \
+            "${REGISTRY}/${IMAGE_NAME}@${{ steps.push.outputs.digest }}"
+        env:
+          REGISTRY: ${{ env.REGISTRY }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+
+      - name: Emit deployment summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### Container image"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Tags | \`${{ steps.meta.outputs.tags }}\` |"
+            echo "| Digest | \`${{ steps.push.outputs.digest }}\` |"
+            echo ""
+            echo "**Pin production to the digest, not a tag:**"
+            echo ""
+            echo '```yaml'
+            echo "image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
+            echo '```'
+            echo ""
+            echo "> \`docker-compose.yml:6-7\` currently uses \`build: .\` plus"
+            echo "> \`image: telegram-auto-download:latest\`. Production must pull a"
+            echo "> digest-pinned GHCR image instead — see docs/ops/05-operations.md"
+            echo "> § Container upgrade & rollback."
+          } >> "$GITHUB_STEP_SUMMARY"

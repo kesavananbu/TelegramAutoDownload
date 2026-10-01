@@ -1,0 +1,79 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# CodeQL — deep static security analysis for the C# backend and the wwwroot JS
+# dashboard. Split from pr-validation.yml because C# CodeQL needs a full build
+# on a Windows runner (net8.0-windows TFMs) and takes materially longer.
+#
+# STATUS: UNVALIDATED — authored without execution.
+#         See docs/ops/05-cicd.md § "First-run validation checklist".
+# ─────────────────────────────────────────────────────────────────────────────
+name: CodeQL
+
+on:
+  pull_request:
+    branches: [main, master, enterprise-readiness]
+  push:
+    branches: [main, master, enterprise-readiness]
+  schedule:
+    # Weekly sweep so new CodeQL queries run against unchanged code.
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: codeql-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: csharp
+            runner: windows-latest
+            build-mode: manual
+          - language: javascript-typescript
+            runner: ubuntu-latest
+            build-mode: none
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 8 SDK
+        if: matrix.language == 'csharp'
+        uses: actions/setup-dotnet@v4
+        with:
+          # Pinned to 8 on purpose — the dev box runs SDK 10.0.401 while every
+          # project targets net8.0 / net8.0-windows.
+          dotnet-version: "8.0.x"
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          queries: security-extended,security-and-quality
+
+      # Autobuild is not used: it looks for a .sln, and none is tracked
+      # (README.md:111 references a `RunnerApp.sln` that does not exist).
+      - name: Manual build for CodeQL
+        if: matrix.language == 'csharp'
+        shell: pwsh
+        run: |
+          dotnet new sln -n TelegramAutoDownload-CodeQL
+          Get-ChildItem -Recurse -Filter *.csproj |
+            Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' } |
+            ForEach-Object { dotnet sln TelegramAutoDownload-CodeQL.sln add $_.FullName }
+          dotnet restore TelegramAutoDownload-CodeQL.sln
+          dotnet build TelegramAutoDownload-CodeQL.sln --configuration Release --no-restore -warnaserror:false
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:${{ matrix.language }}

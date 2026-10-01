@@ -1,0 +1,502 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Desktop release pipeline (WPF surface)
+#
+# HARD PROJECT INVARIANT — enforced in three independent places below:
+#   Every release MUST carry BOTH
+#     * TelegramAutoDownload_vX.Y.Z_Setup.exe     (Inno Setup, installer/setup.iss)
+#     * TelegramAutoDownload_vX.Y.Z_Portable.zip  (portable users)
+#   Source of truth: .cursor/rules/release-process.mdc:10-15,33-36
+#   Shipping only one of the two is explicitly forbidden, and this matters at
+#   runtime: AutoUpdateService picks Setup.exe for installed users and the ZIP
+#   for portable users (Services/AutoUpdateService.cs:69-99). A release missing
+#   one artifact silently breaks self-update for half the installed base.
+#
+# Enforcement layers:
+#   1. pre-publish  — both files must exist on disk, be non-trivially sized, and
+#                     be named exactly as the rule specifies.
+#   2. draft-first  — the release is created as a DRAFT; the auto-updater only
+#                     reads /releases/latest, which ignores drafts, so a failed
+#                     run can never be seen by clients.
+#   3. post-upload  — GitHub is re-queried for the attached assets; if either is
+#                     missing the draft is DELETED and the job fails. The release
+#                     is only un-drafted after that check passes.
+#
+# STATUS: UNVALIDATED — authored without execution (no `dotnet build`/`publish`
+#         permitted in this workspace). See docs/ops/05-cicd.md.
+# ─────────────────────────────────────────────────────────────────────────────
+name: Release (Desktop)
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version WITHOUT the leading v (e.g. 2.9.4). Must already match AppVersion.cs and setup.iss."
+        required: true
+        type: string
+      dry_run:
+        description: "Build and verify artifacts but do not create a GitHub release"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: release-desktop-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_VERSION: "8.0.x"
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────────────
+  # Gate 0 — never cut a release from red code.
+  # ───────────────────────────────────────────────────────────────────────────
+  test:
+    name: Pre-release tests
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Synthesise CI solution (no tracked .sln)
+        shell: pwsh
+        run: |
+          dotnet new sln -n TelegramAutoDownload-CI
+          Get-ChildItem -Recurse -Filter *.csproj |
+            Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' } |
+            ForEach-Object { dotnet sln TelegramAutoDownload-CI.sln add $_.FullName }
+
+      - name: Restore & build
+        run: |
+          dotnet restore TelegramAutoDownload-CI.sln
+          dotnet build TelegramAutoDownload-CI.sln -c Release --no-restore -warnaserror:false
+
+      - name: Unit tests
+        run: >
+          dotnet test TelegramAutoDownload.Tests/TelegramAutoDownload.Tests.csproj
+          -c Release --no-build
+          --logger "trx;LogFileName=release-tests.trx"
+          --results-directory artifacts/test
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-test-results
+          path: artifacts/test/**
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Build both artifacts on a single Windows runner.
+  # Inno Setup is Windows-only, so this job CANNOT move to ubuntu.
+  # ───────────────────────────────────────────────────────────────────────────
+  build:
+    name: Build Setup.exe + Portable.zip
+    needs: test
+    runs-on: windows-latest
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      setup_name: ${{ steps.version.outputs.setup_name }}
+      zip_name: ${{ steps.version.outputs.zip_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      # ── Version consistency gate ──────────────────────────────────────────
+      # The version lives in THREE places that must agree:
+      #   git tag                         (drives the release + asset names)
+      #   TelegramAutoDownload/AppVersion.cs:5   (drives the runtime update check)
+      #   installer/setup.iss:2                  (drives the Setup.exe filename)
+      # AppVersion.Current is compared against the GitHub tag by
+      # AutoUpdateService.IsNewer (AutoUpdateService.cs:66,248-252): if
+      # AppVersion.cs was not bumped, the shipped build immediately believes an
+      # update is available and nags every user on launch. Fail loudly instead.
+      - name: Resolve & verify version
+        id: version
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
+            $version = '${{ inputs.version }}'.TrimStart('v')
+          } else {
+            $version = '${{ github.ref_name }}'.TrimStart('v')
+          }
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            Write-Error "Version '$version' is not X.Y.Z. Tags must be vX.Y.Z."
+            exit 1
+          }
+
+          $appVersionFile = 'TelegramAutoDownload/AppVersion.cs'
+          $m = Select-String -Path $appVersionFile -Pattern 'Current\s*=\s*"([^"]+)"'
+          if (-not $m) { Write-Error "Could not parse Current from $appVersionFile"; exit 1 }
+          $appVersion = $m.Matches[0].Groups[1].Value
+
+          $issFile = 'installer/setup.iss'
+          $m2 = Select-String -Path $issFile -Pattern '#define\s+AppVersion\s+"([^"]+)"'
+          if (-not $m2) { Write-Error "Could not parse AppVersion from $issFile"; exit 1 }
+          $issVersion = $m2.Matches[0].Groups[1].Value
+
+          Write-Host "tag=$version  AppVersion.cs=$appVersion  setup.iss=$issVersion"
+
+          if ($appVersion -ne $version -or $issVersion -ne $version) {
+            Write-Error @"
+          VERSION MISMATCH — release aborted.
+
+            git tag / input      : $version
+            AppVersion.cs:5      : $appVersion
+            installer/setup.iss:2: $issVersion
+
+          All three must match. Bump AppVersion.cs and setup.iss, commit, then re-tag.
+          Releasing with a stale AppVersion.cs makes every installed client believe an
+          update is permanently available (AutoUpdateService.cs:66).
+          "@
+            exit 1
+          }
+
+          # Asset names are fixed by .cursor/rules/release-process.mdc:12-15.
+          # setup.iss:8 derives OutputBaseFilename from the same pattern.
+          "version=$version"                                            >> $env:GITHUB_OUTPUT
+          "setup_name=TelegramAutoDownload_v${version}_Setup.exe"       >> $env:GITHUB_OUTPUT
+          "zip_name=TelegramAutoDownload_v${version}_Portable.zip"      >> $env:GITHUB_OUTPUT
+
+      # ── Publish (verbatim from .cursor/rules/release-process.mdc:20) ───────
+      - name: Publish self-contained single-file WPF app
+        shell: pwsh
+        run: |
+          dotnet publish TelegramAutoDownload/TelegramAutoDownload.csproj `
+            -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true `
+            -o publish/
+
+      - name: Verify publish output
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'publish/TelegramAutoDownload.exe')) {
+            Write-Error "publish/TelegramAutoDownload.exe missing — setup.iss:51 would fail."
+            exit 1
+          }
+          # setup.iss:60 pulls Plugins/* into the installer; warn early if the
+          # CopyPluginsToPublishDir target did not run.
+          if (-not (Test-Path 'publish/Plugins')) {
+            Write-Warning "publish/Plugins is missing — plugin-based downloads (yt-dlp, torrent) will not work."
+          }
+          Get-ChildItem publish -Recurse -File |
+            Select-Object @{n='Path';e={$_.FullName.Substring((Get-Location).Path.Length+1)}}, Length |
+            Format-Table -AutoSize | Out-String | Write-Host
+
+      # ── SIGNING HOOKS ─────────────────────────────────────────────────────
+      # Signing no-ops when secrets are absent so forks and dry runs still work.
+      # Unsigned binaries are a real support cost: SmartScreen blocks first
+      # launch and the auto-updater has no signature to verify (see
+      # docs/ops/05-operations.md § Desktop auto-updater verdict).
+      - name: Detect signing configuration
+        id: signing
+        shell: bash
+        env:
+          SIGNING_CERT_BASE64: ${{ secrets.SIGNING_CERT_BASE64 }}
+        run: |
+          if [ -n "${SIGNING_CERT_BASE64:-}" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ── SIGNING HOOK 1: the application executable, before it is zipped. ──
+      - name: Sign application binaries (Authenticode)
+        if: steps.signing.outputs.configured == 'true'
+        env:
+          SIGNING_CERT_BASE64: ${{ secrets.SIGNING_CERT_BASE64 }}
+          SIGNING_CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
+          SIGNING_TIMESTAMP_URL: ${{ vars.SIGNING_TIMESTAMP_URL || 'http://timestamp.digicert.com' }}
+        shell: pwsh
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP 'codesign.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:SIGNING_CERT_BASE64))
+          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe' |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $signtool) { Write-Error 'signtool.exe not found on the runner.'; exit 1 }
+          & $signtool.FullName sign /f $pfx /p $env:SIGNING_CERT_PASSWORD `
+            /fd SHA256 /tr $env:SIGNING_TIMESTAMP_URL /td SHA256 `
+            'publish\TelegramAutoDownload.exe'
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Remove-Item $pfx -Force
+          & $signtool.FullName verify /pa 'publish\TelegramAutoDownload.exe'
+
+      - name: Warn when signing is not configured
+        if: steps.signing.outputs.configured != 'true'
+        shell: pwsh
+        run: |
+          Write-Warning 'SIGNING_CERT_BASE64 is not set — artifacts will be UNSIGNED.'
+          "> :warning: **Artifacts are unsigned.** Configure ``SIGNING_CERT_BASE64`` / ``SIGNING_CERT_PASSWORD`` (or switch to Azure Trusted Signing) before shipping to enterprise customers." |
+            Out-File -Append $env:GITHUB_STEP_SUMMARY
+
+      # ── Artifact 1 of 2: Portable ZIP (release-process.mdc:23) ────────────
+      - name: Create Portable.zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path publish/* `
+            -DestinationPath '${{ steps.version.outputs.zip_name }}' -Force
+
+      # ── Artifact 2 of 2: Inno Setup installer (release-process.mdc:26-27) ──
+      # The project rule invokes C:\InnoSetup\ISCC.exe locally. GitHub-hosted
+      # runners have no Inno Setup, so install it via Chocolatey and resolve
+      # ISCC.exe rather than hardcoding a path.
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          if ($LASTEXITCODE -ne 0) { Write-Error 'Inno Setup install failed.'; exit 1 }
+
+      - name: Compile installer
+        shell: pwsh
+        run: |
+          $iscc = @(
+            'C:\InnoSetup\ISCC.exe',
+            'C:\Program Files (x86)\Inno Setup 6\ISCC.exe',
+            'C:\Program Files\Inno Setup 6\ISCC.exe'
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) {
+            $iscc = (Get-ChildItem 'C:\' -Recurse -Filter ISCC.exe -ErrorAction SilentlyContinue |
+                     Select-Object -First 1).FullName
+          }
+          if (-not $iscc) { Write-Error 'ISCC.exe not found — cannot build Setup.exe. This step must never be skipped (release-process.mdc:36).'; exit 1 }
+          Write-Host "Using $iscc"
+          # setup.iss:6-8 -> SourceDir=..\publish, OutputDir=.. (repo root)
+          & $iscc 'installer\setup.iss'
+          if ($LASTEXITCODE -ne 0) { Write-Error 'Inno Setup compilation failed.'; exit 1 }
+
+      # ── SIGNING HOOK 2: the installer itself. ─────────────────────────────
+      - name: Sign installer (Authenticode)
+        if: steps.signing.outputs.configured == 'true'
+        env:
+          SIGNING_CERT_BASE64: ${{ secrets.SIGNING_CERT_BASE64 }}
+          SIGNING_CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
+          SIGNING_TIMESTAMP_URL: ${{ vars.SIGNING_TIMESTAMP_URL || 'http://timestamp.digicert.com' }}
+        shell: pwsh
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP 'codesign.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:SIGNING_CERT_BASE64))
+          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe' |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          & $signtool.FullName sign /f $pfx /p $env:SIGNING_CERT_PASSWORD `
+            /fd SHA256 /tr $env:SIGNING_TIMESTAMP_URL /td SHA256 `
+            '${{ steps.version.outputs.setup_name }}'
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Remove-Item $pfx -Force
+          & $signtool.FullName verify /pa '${{ steps.version.outputs.setup_name }}'
+
+      # ══ ENFORCEMENT LAYER 1 — both artifacts, correct names, sane sizes ══
+      - name: ENFORCE both-artifacts invariant (pre-publish)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $required = @(
+            @{ Name = '${{ steps.version.outputs.setup_name }}'; MinMB = 20; Kind = 'Inno Setup installer' },
+            @{ Name = '${{ steps.version.outputs.zip_name }}';   MinMB = 20; Kind = 'Portable archive'   }
+          )
+          $failed = @()
+          foreach ($r in $required) {
+            if (-not (Test-Path $r.Name)) {
+              $failed += "MISSING: $($r.Name) ($($r.Kind))"
+              continue
+            }
+            $mb = [math]::Round((Get-Item $r.Name).Length / 1MB, 2)
+            Write-Host ("OK  {0,-52} {1,8} MB" -f $r.Name, $mb)
+            if ($mb -lt $r.MinMB) {
+              $failed += "TOO SMALL: $($r.Name) is ${mb} MB, expected >= $($r.MinMB) MB (self-contained single-file build)"
+            }
+          }
+          if ($failed.Count -gt 0) {
+            Write-Error (@"
+          RELEASE BLOCKED — the both-artifacts invariant is not satisfied.
+
+          $($failed -join "`n")
+
+          Project rule (.cursor/rules/release-process.mdc:33-36) forbids releasing
+          with only one artifact. Installed users update via Setup.exe and portable
+          users via the ZIP (AutoUpdateService.cs:88-99); shipping one breaks the other half.
+          "@)
+            exit 1
+          }
+          Write-Host 'Both required artifacts present.'
+
+      - name: Generate SHA256SUMS
+        shell: pwsh
+        run: |
+          Get-FileHash '${{ steps.version.outputs.setup_name }}','${{ steps.version.outputs.zip_name }}' -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } |
+            Set-Content -Encoding ascii 'SHA256SUMS.txt'
+          Get-Content 'SHA256SUMS.txt' | Write-Host
+
+      - name: Attest artifact provenance
+        continue-on-error: true
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: |
+            ${{ steps.version.outputs.setup_name }}
+            ${{ steps.version.outputs.zip_name }}
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-release-artifacts
+          path: |
+            ${{ steps.version.outputs.setup_name }}
+            ${{ steps.version.outputs.zip_name }}
+            SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Publish — draft first, verify assets, then un-draft.
+  # ───────────────────────────────────────────────────────────────────────────
+  publish:
+    name: Publish GitHub release
+    needs: build
+    if: ${{ github.event_name == 'push' || !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      VERSION: ${{ needs.build.outputs.version }}
+      SETUP_NAME: ${{ needs.build.outputs.setup_name }}
+      ZIP_NAME: ${{ needs.build.outputs.zip_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-release-artifacts
+          path: dist
+
+      # ══ ENFORCEMENT LAYER 1b — re-check after the artifact round-trip ══
+      # Guards against a partially-uploaded artifact bundle.
+      - name: Re-verify both artifacts after download
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          missing=0
+          for f in "$SETUP_NAME" "$ZIP_NAME"; do
+            if [ ! -s "$f" ]; then echo "::error::Missing or empty: $f"; missing=1; fi
+          done
+          [ "$missing" -eq 0 ] || { echo "::error::Both-artifacts invariant violated after download."; exit 1; }
+          sha256sum -c SHA256SUMS.txt
+          ls -l
+
+      - name: Compose release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          notes="release-notes.md"
+          {
+            echo "## TelegramAutoDownload v${VERSION}"
+            echo ""
+            echo "### Downloads"
+            echo ""
+            echo "| Artifact | Who it is for |"
+            echo "|---|---|"
+            echo "| \`${SETUP_NAME}\` | Installed users and new installs (recommended) |"
+            echo "| \`${ZIP_NAME}\` | Portable users — extract anywhere, no installer |"
+            echo "| \`SHA256SUMS.txt\` | Checksums — verify before running |"
+            echo ""
+          } > "$notes"
+
+          # Pull this version's section out of CHANGELOG.md when present.
+          if [ -f CHANGELOG.md ]; then
+            section=$(awk -v ver="$VERSION" '
+              $0 ~ "^#+ *\\[?v?" ver "\\]?" { found=1; next }
+              found && /^#+ *\[?v?[0-9]+\.[0-9]+\.[0-9]+/ { exit }
+              found { print }
+            ' CHANGELOG.md)
+            if [ -n "${section// /}" ]; then
+              { echo "### Changes"; echo ""; echo "$section"; echo ""; } >> "$notes"
+            fi
+          fi
+
+          {
+            echo "### Upgrade notes"
+            echo ""
+            echo "- In-app auto-update handles both surfaces: installed builds fetch the installer, portable builds fetch the ZIP."
+            echo "- Config, Telegram session and the dedup index live in \`%APPDATA%\\TelegramAutoDownload\` and are preserved across upgrades."
+            echo "- Rollback: uninstall and install the previous \`_Setup.exe\`, or re-extract the previous \`_Portable.zip\`. See docs/ops/05-operations.md § Desktop upgrade & rollback."
+          } >> "$notes"
+
+          cat "$notes"
+
+      # ══ ENFORCEMENT LAYER 2 — DRAFT first. /releases/latest ignores drafts,
+      #    so AutoUpdateService (AutoUpdateService.cs:24-25) cannot see a
+      #    half-finished release. ══
+      - name: Create DRAFT release with both artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "v${VERSION}" >/dev/null 2>&1; then
+            echo "::error::Release v${VERSION} already exists. Refusing to overwrite — delete it deliberately or bump the version."
+            exit 1
+          fi
+          gh release create "v${VERSION}" \
+            "dist/${ZIP_NAME}" \
+            "dist/${SETUP_NAME}" \
+            "dist/SHA256SUMS.txt" \
+            --title "v${VERSION}" \
+            --notes-file release-notes.md \
+            --generate-notes \
+            --draft \
+            --verify-tag
+
+      # ══ ENFORCEMENT LAYER 3 — ask GitHub what is actually attached. ══
+      - name: ENFORCE both-artifacts invariant (post-upload)
+        shell: bash
+        run: |
+          set -euo pipefail
+          assets=$(gh release view "v${VERSION}" --json assets --jq '.assets[].name')
+          echo "Attached assets:"; echo "$assets"
+
+          fail=0
+          echo "$assets" | grep -Fxq "$SETUP_NAME" || { echo "::error::Setup.exe asset missing from release"; fail=1; }
+          echo "$assets" | grep -Fxq "$ZIP_NAME"   || { echo "::error::Portable.zip asset missing from release"; fail=1; }
+
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::Both-artifacts invariant violated on the published release. Deleting the draft."
+            gh release delete "v${VERSION}" --yes --cleanup-tag=false || true
+            exit 1
+          fi
+          echo "Invariant satisfied — both artifacts attached."
+
+      - name: Publish (un-draft) release
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release edit "v${VERSION}" --draft=false --latest
+          echo "### Released v${VERSION}" >> "$GITHUB_STEP_SUMMARY"
+          gh release view "v${VERSION}" --json assets --jq '.assets[] | "- \(.name) (\(.size) bytes)"' \
+            >> "$GITHUB_STEP_SUMMARY"
+
+      # Final safety net: if anything above failed after the draft was created,
+      # do not leave a half-published release behind.
+      - name: Clean up failed draft
+        if: failure()
+        shell: bash
+        run: |
+          if gh release view "v${VERSION}" --json isDraft --jq '.isDraft' 2>/dev/null | grep -q true; then
+            echo "Deleting failed draft release v${VERSION}"
+            gh release delete "v${VERSION}" --yes --cleanup-tag=false || true
+          fi

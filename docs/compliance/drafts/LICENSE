@@ -1,0 +1,223 @@
+DRAFT — NOT ADOPTED. See ./README.md before using this file.
+
+This file presents TWO MUTUALLY EXCLUSIVE OPTIONS. The owner must choose one, have it
+reviewed by counsel, and only then place the chosen text at the repository root as /LICENSE.
+
+Background (see ../06-compliance.md §1.1-1.2):
+  - README.md currently states "MIT" but NO LICENSE FILE EXISTS. No licence has been
+    effectively granted.
+  - The MIT licence expressly permits anyone to "sublicense, and/or sell copies of the
+    Software". It is therefore incompatible with selling this as a commercial product:
+    a customer or competitor could lawfully resell it, or strip the licence-key check.
+  - Before adopting EITHER option, Legal Questions 1 and 2 must be answered: whether the
+    owner can relicense given prior releases claiming MIT, and whether any third-party
+    contributions exist that would require a contributor licence agreement.
+
+================================================================================
+OPTION A — PROPRIETARY END-USER LICENCE AGREEMENT  (RECOMMENDED)
+================================================================================
+
+Recommended because it is the only option consistent with the self-hosted commercial model
+recommended in ../../gtm/07-marketplace-readiness.md §1. Source may still be published for
+transparency ("source-available"); this licence does not grant the right to redistribute,
+resell, or remove licensing controls.
+
+--------------------------------------------------------------------------------
+
+END-USER LICENCE AGREEMENT FOR [PRODUCT NAME]
+
+Copyright (c) [YEAR] [LEGAL ENTITY NAME]. All rights reserved.
+
+IMPORTANT — READ CAREFULLY. This End-User Licence Agreement ("Agreement") is a legal
+agreement between you, either an individual or a single legal entity ("You"), and
+[LEGAL ENTITY NAME] ("Licensor") for the software product identified above, including any
+associated media, printed materials, and electronic documentation ("Software").
+
+BY INSTALLING, COPYING, OR OTHERWISE USING THE SOFTWARE, YOU AGREE TO BE BOUND BY THIS
+AGREEMENT. IF YOU DO NOT AGREE, DO NOT INSTALL OR USE THE SOFTWARE.
+
+1. GRANT OF LICENCE
+
+1.1 Subject to Your compliance with this Agreement and payment of all applicable fees,
+    Licensor grants You a non-exclusive, non-transferable, revocable licence to install and
+    use the Software on the number of devices or instances permitted by the edition and
+    licence key You have obtained, solely for Your own internal purposes.
+
+1.2 The Software is licensed, not sold. Licensor and its suppliers retain all right, title,
+    and interest in and to the Software, including all intellectual property rights.
+
+1.3 If the Software is provided to You free of charge, or under an evaluation, trial, or
+    "Free" edition, the licence granted is further limited to the feature and capacity limits
+    of that edition, and Licensor may modify or discontinue it at any time.
+
+2. RESTRICTIONS
+
+You shall not, and shall not permit any third party to:
+
+(a) redistribute, resell, sublicense, rent, lease, lend, or host the Software for the benefit
+    of any third party, or otherwise make the Software available to any third party, whether
+    or not for a fee;
+(b) remove, disable, circumvent, or otherwise interfere with any licence key verification,
+    entitlement check, edition limit, or rate-limiting mechanism in the Software;
+(c) reverse engineer, decompile, or disassemble the Software, except to the extent such
+    activity is expressly permitted by applicable law notwithstanding this limitation;
+(d) remove or alter any copyright, trademark, or other proprietary notice;
+(e) use the Software in violation of the Acceptable Use Policy at [WEBSITE]/aup, which is
+    incorporated into this Agreement by reference;
+(f) use the Software in violation of the terms of service of any third-party platform,
+    including without limitation the Telegram Terms of Service and the Telegram API Terms of
+    Service; or
+(g) use the Software, or any data obtained using the Software, to train, fine-tune, validate,
+    benchmark, or develop any artificial intelligence or machine-learning model.
+
+3. THIRD-PARTY PLATFORMS AND COMPONENTS
+
+3.1 The Software is an independent product. It is NOT produced by, endorsed by, affiliated
+    with, or supported by Telegram Messenger Inc. or any of its affiliates. "Telegram" is a
+    trademark of its respective owner and is used here solely to describe interoperability.
+
+3.2 YOU ACKNOWLEDGE THAT USE OF THE SOFTWARE REQUIRES YOU TO AUTHENTICATE WITH YOUR OWN
+    THIRD-PARTY ACCOUNT CREDENTIALS, AND THAT AUTOMATED USE OF SUCH AN ACCOUNT MAY BREACH
+    THE APPLICABLE PLATFORM'S TERMS OF SERVICE AND MAY RESULT IN THAT ACCOUNT BEING
+    RATE-LIMITED, RESTRICTED, SUSPENDED, OR PERMANENTLY BANNED, INCLUDING THE PERMANENT LOSS
+    OF ACCESS TO THE ACCOUNT AND ALL DATA ASSOCIATED WITH IT. YOU ACCEPT THIS RISK ENTIRELY.
+    LICENSOR HAS NO ABILITY TO PREVENT, APPEAL, OR REVERSE SUCH ACTION, AND SHALL HAVE NO
+    LIABILITY FOR IT.
+
+3.3 You are solely responsible for obtaining and complying with the terms of any third-party
+    API credentials You use with the Software.
+
+3.4 The Software includes or interoperates with third-party components licensed under their
+    own terms, which are set out in the NOTICE file accompanying the Software. Where a
+    third-party component is licensed under terms that grant You rights broader than this
+    Agreement, those terms govern that component and this Agreement does not restrict them.
+
+4. YOUR RESPONSIBILITIES REGARDING CONTENT AND PERSONAL DATA
+
+4.1 You are solely responsible for all content You acquire, copy, store, or distribute using
+    the Software, and for ensuring You have the legal right to do so.
+
+4.2 The Software may process personal data of third parties, including the content of
+    messages sent by other people. Where applicable data-protection law applies, YOU — not
+    Licensor — are the controller of that data. You are responsible for establishing a lawful
+    basis, providing any required notices, observing retention limits, and responding to data
+    subject requests.
+
+4.3 Licensor does not receive, access, store, or process any content or personal data that You
+    acquire using the Software, except as described in the Privacy Policy at
+    [WEBSITE]/privacy.
+
+5. TERM AND TERMINATION
+
+5.1 This Agreement takes effect when You first install or use the Software and continues until
+    terminated.
+
+5.2 Licensor may terminate this Agreement immediately on written notice if You materially
+    breach it, including any breach of Section 2 or the Acceptable Use Policy.
+
+5.3 On termination You must cease all use of the Software and destroy all copies. Sections 3,
+    4, 6, 7, and 9 survive termination.
+
+5.4 Termination does not require You to delete data You have already lawfully acquired.
+
+6. DISCLAIMER OF WARRANTIES
+
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT. LICENSOR DOES NOT WARRANT THAT THE SOFTWARE
+WILL BE UNINTERRUPTED OR ERROR-FREE, THAT IT WILL CONTINUE TO INTEROPERATE WITH ANY
+THIRD-PARTY PLATFORM, OR THAT ANY DATA WILL BE PRESERVED. Some jurisdictions do not allow the
+exclusion of implied warranties, so some of the above may not apply to You. Nothing in this
+Agreement limits any statutory rights You have as a consumer that cannot lawfully be limited.
+
+7. LIMITATION OF LIABILITY
+
+7.1 TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL LICENSOR BE LIABLE
+    FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR FOR ANY LOSS
+    OF PROFITS, REVENUE, DATA, DATA USE, OR GOODWILL, OR FOR THE LOSS, SUSPENSION, OR BAN OF
+    ANY THIRD-PARTY ACCOUNT, HOWEVER CAUSED AND UNDER ANY THEORY OF LIABILITY.
+
+7.2 LICENSOR'S TOTAL AGGREGATE LIABILITY UNDER THIS AGREEMENT SHALL NOT EXCEED THE GREATER OF
+    (A) THE AMOUNT YOU PAID FOR THE SOFTWARE IN THE TWELVE MONTHS PRECEDING THE CLAIM, OR
+    (B) [AMOUNT].
+
+7.3 Nothing in this Agreement excludes or limits liability for death or personal injury caused
+    by negligence, for fraud or fraudulent misrepresentation, or for any other liability that
+    cannot lawfully be excluded or limited.
+
+8. INDEMNITY
+
+You shall indemnify, defend, and hold harmless Licensor against any claim, demand, loss, or
+expense (including reasonable legal fees) arising out of or relating to (a) Your use of the
+Software in breach of this Agreement or the Acceptable Use Policy, (b) any content You acquire,
+store, or distribute using the Software, or (c) Your processing of any third party's personal
+data using the Software.
+
+9. GOVERNING LAW AND VENUE
+
+This Agreement is governed by the laws of [JURISDICTION], without regard to its conflict-of-law
+rules. The courts of [JURISDICTION] shall have exclusive jurisdiction, save that either party
+may seek injunctive relief in any competent court.
+
+10. EXPORT AND SANCTIONS
+
+You may not use or export the Software in violation of any applicable export control or
+sanctions law. You represent that You are not located in, and are not a national or resident
+of, any jurisdiction subject to a comprehensive embargo, and are not on any restricted-party
+list.
+
+11. GENERAL
+
+11.1 This Agreement, together with the Acceptable Use Policy and Privacy Policy, is the entire
+     agreement between the parties regarding the Software.
+11.2 If any provision is held unenforceable, the remainder continues in full force.
+11.3 Licensor's failure to enforce any provision is not a waiver of it.
+11.4 You may not assign this Agreement without Licensor's prior written consent.
+
+Contact: [LEGAL EMAIL] · [LEGAL ENTITY NAME], [REGISTERED ADDRESS]
+
+================================================================================
+OPTION B — OPEN-CORE / DUAL LICENCE  (NOT RECOMMENDED HERE)
+================================================================================
+
+Presented for completeness. ../../gtm/07-marketplace-readiness.md §1 recommends against it
+for this codebase, primarily because the plugin system is a runtime DLL loader
+(TelegramAutoDownload.csproj:43-65), which makes an enforceable licence boundary between
+"open core" and "paid plugin" impractical — the community would simply publish a free
+replacement plugin.
+
+If chosen, the structure would be:
+
+  (a) The core application is licensed under the GNU Affero General Public License v3.0
+      (AGPL-3.0), NOT MIT. AGPL is the correct choice for open-core because it requires
+      anyone who modifies the software and makes it available over a network to publish their
+      source, which prevents a competitor from running a closed hosted fork. MIT provides no
+      such protection and should not be used.
+
+  (b) Commercial features (multi-user, audit log, retention enforcement, subject search) live
+      in separately licensed modules under the Option A terms above, and are NOT covered by
+      the AGPL grant.
+
+  (c) A commercial licence is offered to customers who cannot accept AGPL obligations.
+
+  (d) A Contributor Licence Agreement (CLA) is MANDATORY from day one, so the owner retains
+      the right to dual-license. Without it, accepting a single outside contribution
+      permanently removes the ability to relicense.
+
+Note that Option B does NOT reduce any of the legal risks identified in ../06-compliance.md.
+It arguably increases content-liability exposure by publishing the source of the
+DMCA §1201-exposed URL-download orchestration (see ../06-compliance.md §4.2).
+
+================================================================================
+WHAT MUST NOT BE DONE
+================================================================================
+
+Do NOT simply add an MIT LICENSE file to match the current README. That would:
+  - irrevocably grant every existing and future user the right to resell the Software and to
+    remove any licence-key enforcement, destroying the commercial model; and
+  - be extremely difficult to reverse, because MIT grants are perpetual and irrevocable for
+    versions already distributed under them.
+
+If the owner's genuine intent is a free and open project with no commercial model, MIT is a
+fine choice — but that decision should be made deliberately, not inherited from a one-word
+README line.
