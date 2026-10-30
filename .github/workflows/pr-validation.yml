@@ -43,6 +43,9 @@ jobs:
     name: Build & test (windows)
     runs-on: windows-latest
     timeout-minutes: 45
+    permissions:
+      contents: read
+      checks: write   # dorny/test-reporter publishes the TRX results as a check run
     steps:
       - uses: actions/checkout@v4
 
@@ -85,7 +88,7 @@ jobs:
             --no-restore `
             -warnaserror:false `
             /p:ContinuousIntegrationBuild=true `
-            /flp:LogFile=build-warnings.log;WarningsOnly
+            "/flp:LogFile=build-warnings.log;WarningsOnly"
 
       - name: Publish build warning log
         if: always()
@@ -356,7 +359,7 @@ jobs:
             /p:AnalysisMode=Recommended `
             /p:EnforceCodeStyleInBuild=true `
             -warnaserror:false `
-            /flp:LogFile=analysis.log;WarningsOnly
+            "/flp:LogFile=analysis.log;WarningsOnly"
 
       - name: Summarise analyser findings
         if: always()
