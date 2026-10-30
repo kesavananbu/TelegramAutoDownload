@@ -66,6 +66,18 @@ namespace DownloadPlugin
 
                 filePath = Path.Combine(path, fileName);
 
+                var diskPolicyError = DownloadLimits.ValidateDownloadAllowed(path, totalSize);
+                if (diskPolicyError != null)
+                {
+                    OnComplete?.Invoke(config.ChatName, fileName, false);
+                    return new ResultExecute(config.ChatName)
+                    {
+                        IsSuccess = false,
+                        FileName = fileName,
+                        ErrorMessage = diskPolicyError,
+                    };
+                }
+
                 // Report start
                 OnProgress?.Invoke(config.ChatName, fileName, PluginName, 0, 0, totalSize);
 
@@ -81,6 +93,7 @@ namespace DownloadPlugin
 
                     await WithRetryAsync(async () =>
                     {
+                        PrepareStreamForChunkWrite(fileStream, chunkOffset);
                         var request = new HttpRequestMessage(HttpMethod.Get, config.Text);
                         request.Headers.Range = new RangeHeaderValue(chunkOffset, end);
                         using HttpResponseMessage chunkResponse = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
@@ -113,6 +126,16 @@ namespace DownloadPlugin
                 if (!string.IsNullOrEmpty(cancelKey)) CancellationRegistry.Remove(cancelKey);
                 return new ResultExecute(config.ChatName) { ErrorMessage = e.Message, FileName = fileName };
             }
+        }
+
+        /// <summary>
+        /// Positions the stream at the chunk start and truncates any bytes appended after a failed retry.
+        /// </summary>
+        public static void PrepareStreamForChunkWrite(FileStream stream, long chunkOffset)
+        {
+            stream.Seek(chunkOffset, SeekOrigin.Begin);
+            if (stream.Length > chunkOffset)
+                stream.SetLength(chunkOffset);
         }
     }
 }

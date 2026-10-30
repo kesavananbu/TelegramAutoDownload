@@ -189,15 +189,23 @@ namespace TelegramAutoDownload.Tests
         // Corrupt file
         // ---------------------------------------------------------------------------
 
+        /// <summary>
+        /// Intentionally changed from v2.9.x behaviour: corrupt config no longer bricks the app;
+        /// defaults are returned and the bad file is preserved as *.corrupt-*.
+        /// </summary>
         [Fact]
-        public void Read_CorruptJson_ThrowsJsonReaderException()
+        public void Read_CorruptJson_ReturnsDefaultsAndBacksUpFile()
         {
             var path = TempPath("corrupt.txt");
             File.WriteAllText(path, "{ this is not json!! @@@");
             var cfg = new ConfigFile(path);
 
-            var act = () => cfg.Read();
-            act.Should().Throw<JsonReaderException>("corrupt JSON must surface as a parse error");
+            var result = cfg.Read();
+            result.Should().NotBeNull();
+            result.Chats.Should().BeEmpty();
+
+            Directory.GetFiles(_dir, "corrupt.txt.corrupt-*")
+                .Should().NotBeEmpty("corrupt JSON must be copied to a timestamped backup");
         }
     }
 }

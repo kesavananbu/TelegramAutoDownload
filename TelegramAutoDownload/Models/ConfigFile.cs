@@ -1,5 +1,6 @@
 ﻿using Newtonsoft.Json;
 using System.IO;
+using TelegramClient;
 
 namespace TelegramAutoDownload.Models
 {
@@ -15,20 +16,34 @@ namespace TelegramAutoDownload.Models
         {
             _fileName = filePath ?? AppPaths.ConfigFile;
             if (!File.Exists(_fileName))
-                File.WriteAllText(_fileName,
-                    JsonConvert.SerializeObject(new ConfigParams(), Formatting.Indented));
+            {
+                var defaults = new ConfigParams();
+                defaults.ApplyDownloadLimits();
+                ConfigJsonFileHelper.WriteAtomic(_fileName,
+                    JsonConvert.SerializeObject(defaults, Formatting.Indented));
+            }
         }
 
         public void Save(ConfigParams config)
         {
-            File.WriteAllText(_fileName, JsonConvert.SerializeObject(config, Formatting.Indented));
+            ConfigJsonFileHelper.WriteAtomic(_fileName,
+                JsonConvert.SerializeObject(config, Formatting.Indented));
         }
 
         public ConfigParams Read()
         {
-            var data = File.ReadAllText(_fileName);
+            var data = ConfigJsonFileHelper.ReadJsonOrBackupCorrupt(_fileName, out _);
+            if (data == null)
+            {
+                var defaults = new ConfigParams();
+                defaults.NormalizeYtDlpQualityForAllChats();
+                defaults.ApplyDownloadLimits();
+                return defaults;
+            }
+
             var result = JsonConvert.DeserializeObject<ConfigParams>(data) ?? new ConfigParams();
             result.NormalizeYtDlpQualityForAllChats();
+            result.ApplyDownloadLimits();
             return result;
         }
     }

@@ -2,7 +2,6 @@
 using System;
 using System.IO;
 using System.Linq;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using TelegramClient.Factory.Factories;
@@ -118,6 +117,20 @@ namespace TelegramClient.Factory.Base
             var partPath = GetPartFilePath(finalPath);
             var cancelKey = CancellationRegistry.MakeKey(chatDto.Name, fileName);
 
+            var diskPolicyError = DownloadLimits.ValidateDownloadAllowed(
+                Path.GetDirectoryName(finalPath) ?? PathFolderToSaveFiles ?? ".",
+                document.size);
+            if (diskPolicyError != null)
+            {
+                OnComplete?.Invoke(chatDto.Name, fileName, false);
+                return new ResultExecute(chatDto.Name)
+                {
+                    IsSuccess = false,
+                    FileName = fileName,
+                    ErrorMessage = diskPolicyError,
+                };
+            }
+
             OnProgress?.Invoke(chatDto.Name, fileName, pluginName, 0, 0, document.size);
             DownloadActivity.Enter();
             var userCancelToken = CancellationToken.None;
@@ -142,7 +155,17 @@ namespace TelegramClient.Factory.Base
                     }
                 }).ConfigureAwait(false);
 
-                File.Move(partPath, finalPath, overwrite: true);
+                if (!DownloadPartFiles.TryPromotePartToFinal(partPath, finalPath, document.size, out var promoteError))
+                {
+                    OnComplete?.Invoke(chatDto.Name, fileName, false);
+                    return new ResultExecute(chatDto.Name)
+                    {
+                        IsSuccess = false,
+                        FileName = fileName,
+                        ErrorMessage = promoteError,
+                    };
+                }
+
                 if (markDownloadedInIndex)
                     FileDownloadIndex.MarkDownloaded(document.ID);
                 OnComplete?.Invoke(chatDto.Name, fileName, true);
@@ -288,18 +311,30 @@ namespace TelegramClient.Factory.Base
                     };
                 }
 
-                foreach (var regexPattern in chatDto.IgnoreFileByRegex)
+                var matchedPattern = RegexFilterHelper.FindFirstMatchingIgnorePattern(
+                    chatDto.IgnoreFileByRegex, document.Filename);
+                if (matchedPattern != null)
                 {
-                    Regex regex = new(regexPattern);
-                    if (regex.IsMatch(document.Filename))
+                    return new ResultExecute(chatDto.Name)
                     {
-                        return new ResultExecute(chatDto.Name)
-                        {
-                            FileName = document.Filename,
-                            IsSuccess = false,
-                            ErrorMessage = $"skip by regex pattern: '{regexPattern}' matched the document filename: {document.Filename}"
-                        };
-                    }
+                        FileName = document.Filename,
+                        IsSuccess = false,
+                        ErrorMessage =
+                            $"skip by regex pattern: '{matchedPattern}' matched the document filename: {document.Filename}"
+                    };
+                }
+
+                var diskPolicyError = DownloadLimits.ValidateDownloadAllowed(
+                    PathFolderToSaveFiles ?? ".",
+                    document.size);
+                if (diskPolicyError != null)
+                {
+                    return new ResultExecute(chatDto.Name)
+                    {
+                        FileName = document.Filename,
+                        IsSuccess = false,
+                        ErrorMessage = diskPolicyError,
+                    };
                 }
                 return new ResultExecute(chatDto.Name)
                 {

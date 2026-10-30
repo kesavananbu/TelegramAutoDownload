@@ -1,5 +1,6 @@
 using Newtonsoft.Json;
 using TelegramAutoDownload.Models;
+using TelegramClient;
 
 namespace TelegramAutoDownload.Headless;
 
@@ -18,7 +19,8 @@ public sealed class ConfigStore
         if (!File.Exists(_path))
         {
             var seeded = new ConfigParams { PathSaveFile = HeadlessPaths.DownloadsDir };
-            File.WriteAllText(_path, JsonConvert.SerializeObject(seeded, Formatting.Indented));
+            seeded.ApplyDownloadLimits();
+            ConfigJsonFileHelper.WriteAtomic(_path, JsonConvert.SerializeObject(seeded, Formatting.Indented));
         }
     }
 
@@ -26,11 +28,17 @@ public sealed class ConfigStore
     {
         lock (_lock)
         {
-            var json = File.ReadAllText(_path);
-            var cfg = JsonConvert.DeserializeObject<ConfigParams>(json) ?? new ConfigParams();
+            var json = ConfigJsonFileHelper.ReadJsonOrBackupCorrupt(_path, out _);
+            ConfigParams cfg;
+            if (json == null)
+                cfg = new ConfigParams { PathSaveFile = HeadlessPaths.DownloadsDir };
+            else
+                cfg = JsonConvert.DeserializeObject<ConfigParams>(json) ?? new ConfigParams();
+
             cfg.NormalizeYtDlpQualityForAllChats();
             if (string.IsNullOrWhiteSpace(cfg.PathSaveFile))
                 cfg.PathSaveFile = HeadlessPaths.DownloadsDir;
+            cfg.ApplyDownloadLimits();
             return cfg;
         }
     }
@@ -38,6 +46,9 @@ public sealed class ConfigStore
     public void Save(ConfigParams cfg)
     {
         lock (_lock)
-            File.WriteAllText(_path, JsonConvert.SerializeObject(cfg, Formatting.Indented));
+        {
+            ConfigJsonFileHelper.WriteAtomic(_path,
+                JsonConvert.SerializeObject(cfg, Formatting.Indented));
+        }
     }
 }

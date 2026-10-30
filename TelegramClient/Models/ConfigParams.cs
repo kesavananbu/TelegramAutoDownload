@@ -17,6 +17,21 @@ namespace TelegramAutoDownload.Models
 
         public int DownloadThreads { get; set; } = 3;
 
+        /// <summary>Minimum free bytes to keep on the download volume (default 1 GiB).</summary>
+        public long DownloadFreeSpaceSafetyMarginBytes { get; set; } = DownloadLimits.DefaultFreeSpaceSafetyMarginBytes;
+
+        /// <summary>Maximum single-file download size in bytes; 0 = unlimited.</summary>
+        public long MaxDownloadFileSizeBytes { get; set; }
+
+        /// <summary>Pushes disk/size limits into <see cref="DownloadLimits"/> for the download pipeline.</summary>
+        public void ApplyDownloadLimits()
+        {
+            DownloadLimits.MaxDownloadFileSizeBytes = MaxDownloadFileSizeBytes;
+            DownloadLimits.FreeSpaceSafetyMarginBytes = DownloadFreeSpaceSafetyMarginBytes > 0
+                ? DownloadFreeSpaceSafetyMarginBytes
+                : DownloadLimits.DefaultFreeSpaceSafetyMarginBytes;
+        }
+
         // Headless rate-limit settings (used by Phase 3 TokenBucketRateLimiter).
         // Defaults are conservative: 1 history request / second, burst of 5.
         // Old configs that lack these properties pick up the defaults.

@@ -19,8 +19,22 @@ namespace TelegramAutoDownload.Tests
             => System.Threading.Tasks.Task.FromResult(new ResultExecute(chatDto.Name));
     }
 
-    public class DownloadPolicyTests
+    [Collection("DownloadLimitsGate")]
+    public class DownloadPolicyTests : IDisposable
     {
+        public DownloadPolicyTests()
+        {
+            // Avoid cross-test / parallel interference from disk-limit tests elsewhere in the assembly.
+            DownloadLimits.MaxDownloadFileSizeBytes = 0;
+            DownloadLimits.FreeSpaceSafetyMarginBytes = 0;
+        }
+
+        public void Dispose()
+        {
+            DownloadLimits.MaxDownloadFileSizeBytes = 0;
+            DownloadLimits.FreeSpaceSafetyMarginBytes = DownloadLimits.DefaultFreeSpaceSafetyMarginBytes;
+        }
+
         private static ChatDto MakeChat(int minSizeMb) => new ChatDto
         {
             Name = "TestChat",
