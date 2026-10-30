@@ -27,7 +27,8 @@ public sealed class PathPolicyTests
         try
         {
             FolderTemplateHelper.AllowAbsolutePaths = false;
-            var act = () => FolderTemplateHelper.Resolve(@"C:\Windows", "Videos", "Chat");
+            var absolute = Path.GetFullPath(Path.GetTempPath());
+            var act = () => FolderTemplateHelper.Resolve(absolute, "Videos", "Chat");
             act.Should().Throw<InvalidOperationException>();
         }
         finally
