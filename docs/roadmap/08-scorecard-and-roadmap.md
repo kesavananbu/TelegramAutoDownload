@@ -56,6 +56,24 @@ Completed in commits `3072ef3`–`b5165b5` ([Test harness v2](38a4f447-2f6a-4def
 
 **Remaining from Milestone 1:** validate and commit CI workflows under `.github/workflows/` (still UNVALIDATED).
 
+### Status 2026-10-30 — Milestones 2–5 implemented on `enterprise-readiness`
+
+| Item | Status | Commit | Still open |
+|---|---|---|---|
+| 4 API budget | Done | `ac6a974` | ADR-003 gateway/AIMD; a few ad-hoc API calls still unbudgeted |
+| 5 Dedup | Partial | `fdbc8a0` | Live `TelegramClient` path still dedups via `FileDownloadIndex` only |
+| 6 Corruption | Done | `60f442a` | — |
+| 7 Session path | Done | `fdbc8a0` | — |
+| 8 Auto-update | Done (hash verify) | `922ada0` | Velopack / Authenticode; `GitHubOwner` kept as `il90il90` by decision |
+| 9 Sqlite CVE | Done | `fdbc8a0` | Validate `SQLitePCLRaw` 3.x on ARM NAS targets |
+| 10–12 Web auth | Done | `93c6d16` | F-04 server-side sessions, `__Host-` cookies, F-07 for config/session, F-19 log caps |
+| 13 F-09/F-10 | Done | `922ada0` | `SHA256SUMS.txt` generation in release CI |
+| 14 Remaining | Partial | F-13, F-15, F-17, F-18, F-22 done | F-26 unverified |
+| 15–17 UI | Done (vanilla JS) | `59cef9f` + merge fixes | Column picker UI, full WCAG audit |
+| 18 SSE hub | Not started | — | — |
+| 19 Customization | Partial | `59cef9f` | Theme/accent/density only; saved views, rule templates, server-side prefs |
+| 20–22 Docs/legal/CI | Done | `202761e` | `release-desktop.yml` not actionlint-validated; first real CI run pending |
+
 ### Milestone 2 — Stop the bleeding
 
 Ordered by worst realistic outcome. The account-ban defect outranks the security findings because it fires during normal use with no attacker involved, and the loss is the user's entire Telegram account.

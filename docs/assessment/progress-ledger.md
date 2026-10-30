@@ -144,7 +144,9 @@ Surviving legal items, reprioritized: add the missing `LICENSE`; add `NOTICE` fo
 
 Serialized implementer → reviewer loops after Task 1. Order: Milestone 2 (account ban, dedup, corruption, session path) → Milestone 3 (security F-01 chain first) → Milestone 4 (UI free wins).
 
-## Milestones 2–5 — parallel worktree fan-out: IN PROGRESS (2026-10-30)
+## Milestones 2–5 — parallel worktree fan-out: MERGED (2026-10-30)
+
+**Outcome:** only T4 received an isolated worktree; T1–T3 and T5–T7 shared the main checkout. File ownership kept edits disjoint; agents were redirected to no-git + per-agent `--artifacts-path`, and the controller committed each track by path. Controller integration fixes: HeadlessHost↔budget DI cycle (startup stack overflow), WPF semaphore capture, root-anchored `.gitignore`, PathPolicy on per-provider templates, CSP-safe inline styles, `/app-ui.js` pre-auth, half-applied dark theme. Final: build 0 errors; Headless.Tests **49/49**; Tests **423/423** (4 consecutive runs). Status per roadmap item: `docs/roadmap/08-scorecard-and-roadmap.md`.
 
 Seven `best-of-n-runner` agents on `composer-2.5-fast`, each in an isolated worktree on branch `er/<track>` off `enterprise-readiness@a458fd3`, with disjoint file ownership. Controller merges, reconciles `Program.cs`, runs full build + both test suites.
 

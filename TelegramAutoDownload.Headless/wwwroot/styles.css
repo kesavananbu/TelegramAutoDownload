@@ -262,3 +262,13 @@ th { background: color-mix(in srgb, var(--surface) 92%, var(--text)); }
 .text-ok { color: #1a7f4c; }
 .text-bad { color: #a22; }
 .log-view-short { max-height: 40vh; }
+
+/* Theme the surfaces that predate the CSS variables, so dark mode never renders light text on white. */
+.auth-card, .modal-card, .metric, .btn-danger, button.inline.danger { background: var(--surface); }
+.auth-brand { background: var(--surface); border-bottom-color: var(--border); }
+.auth-footer { background: var(--surface); border-top-color: var(--border); }
+.auth-brand h1 { color: var(--text); }
+.hint, .empty-state, .provider-folders summary { color: color-mix(in srgb, var(--text) 62%, var(--surface)); }
+input:not([type="color"]):not([type="checkbox"]):not([type="radio"]), select, textarea { background: var(--surface); color: var(--text); border: 1px solid color-mix(in srgb, var(--text) 25%, var(--surface)); }
+.auth-card a { color: color-mix(in srgb, var(--accent) 55%, var(--text)); }
+input[type="color"] { width: 3rem; height: 2rem; padding: 0; border: 1px solid var(--border); background: none; cursor: pointer; }
