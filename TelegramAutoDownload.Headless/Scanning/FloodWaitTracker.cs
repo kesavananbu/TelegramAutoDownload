@@ -14,23 +14,40 @@ public sealed class FloodWaitTracker
     private string? _source;
     private string? _lastMessage;
 
+    public FloodWaitTracker()
+    {
+        if (FloodWaitStatePersistence.TryRestore(out var until, out var source))
+            ApplyPause(until, source, "Restored from disk");
+    }
+
     public void Report(Exception ex, string source)
     {
         if (!FloodWaitHelper.TryParseSeconds(ex, out var seconds)) return;
+        Report(TimeSpan.FromSeconds(seconds), source, ex.Message);
+    }
+
+    public void Report(TimeSpan duration, string source, string? message = null)
+    {
+        var seconds = (int)Math.Ceiling(duration.TotalSeconds);
+        if (seconds <= 0) return;
 
         var until = DateTimeOffset.UtcNow.AddSeconds(seconds);
-        lock (_lock)
-        {
-            if (until > _pausedUntil)
-            {
-                _pausedUntil  = until;
-                _source       = source;
-                _lastMessage  = ex.Message;
-            }
-        }
-
+        ApplyPause(until, source, message ?? $"FLOOD_WAIT {seconds}s");
         Log.Warning("FLOOD_WAIT {Seconds}s from {Source} — API paused until {Until:u}",
             seconds, source, until);
+    }
+
+    private void ApplyPause(DateTimeOffset until, string? source, string? message)
+    {
+        lock (_lock)
+        {
+            if (until <= _pausedUntil) return;
+            _pausedUntil = until;
+            _source = source;
+            _lastMessage = message;
+        }
+
+        FloodWaitStatePersistence.Save(until, source);
     }
 
     public FloodWaitSnapshot Snapshot()
@@ -56,7 +73,11 @@ public sealed class FloodWaitTracker
         while (true)
         {
             var snap = Snapshot();
-            if (!snap.Active) return;
+            if (!snap.Active)
+            {
+                FloodWaitStatePersistence.Clear();
+                return;
+            }
 
             ct.ThrowIfCancellationRequested();
             var delayMs = Math.Clamp(snap.RemainingSeconds * 1000, 500, 30_000);

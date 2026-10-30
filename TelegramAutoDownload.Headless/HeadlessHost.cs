@@ -29,15 +29,17 @@ public sealed class HeadlessHost
 {
     private readonly ConfigStore _config;
     private readonly MediaTracker? _tracker;
+    private readonly ITelegramApiBudget? _apiBudget;
     private readonly object _lock = new();
     private readonly ConcurrentDictionary<string, DownloadEntry> _downloads = new();
 
     public TelegramApp? Telegram { get; private set; }
 
-    public HeadlessHost(ConfigStore config, MediaTracker? tracker = null)
+    public HeadlessHost(ConfigStore config, MediaTracker? tracker = null, ITelegramApiBudget? apiBudget = null)
     {
         _config = config;
         _tracker = tracker;
+        _apiBudget = apiBudget;
     }
 
     /// <summary>Initialise <see cref="Telegram"/> lazily; reuses the existing instance on subsequent calls.</summary>
@@ -52,6 +54,8 @@ public sealed class HeadlessHost
                 "or POST /api/settings/credentials before logging in.");
 
         Telegram = new TelegramApp(cfg.AppId, cfg.ApiHash);
+        if (_apiBudget != null)
+            Telegram.ApiBudget = _apiBudget;
         await Telegram.WaitForLoginAsync(2000);
         WireDownloadEvents(Telegram);
         // Attach DB tracker AFTER the live event wiring so MediaTracker layers on top

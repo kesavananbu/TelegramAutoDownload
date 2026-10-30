@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using Serilog;
 using TelegramAutoDownload.Headless.Data;
+using TelegramClient;
 
 namespace TelegramAutoDownload.Headless.Scanning;
 
@@ -22,18 +23,16 @@ public sealed class DownloadOrchestrator : BackgroundService
 {
     private readonly MediaRepository _repo;
     private readonly HeadlessHost _host;
-    private readonly FloodWaitTracker _floodWait;
+    private readonly ITelegramApiBudget _budget;
 
     private static readonly TimeSpan IdlePollDelay = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan BusyPollDelay = TimeSpan.FromMilliseconds(500);
 
-    private int _inFlight = 0;
-
-    public DownloadOrchestrator(MediaRepository repo, HeadlessHost host, FloodWaitTracker floodWait)
+    public DownloadOrchestrator(MediaRepository repo, HeadlessHost host, ITelegramApiBudget budget)
     {
         _repo = repo;
         _host = host;
-        _floodWait = floodWait;
+        _budget = budget;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stop)
@@ -58,8 +57,8 @@ public sealed class DownloadOrchestrator : BackgroundService
                     continue;
                 }
 
-                var maxConcurrent = Math.Max(1, _host.ReadConfig().DownloadThreads);
-                var capacity = maxConcurrent - Volatile.Read(ref _inFlight);
+                _budget.ConfigureDownloadConcurrency(Math.Max(1, _host.ReadConfig().DownloadThreads));
+                var capacity = _budget.AvailableDownloadSlots;
                 if (capacity <= 0)
                 {
                     await SafeDelay(BusyPollDelay, stop);
@@ -76,10 +75,7 @@ public sealed class DownloadOrchestrator : BackgroundService
                 }
 
                 foreach (var row in batch)
-                {
-                    Interlocked.Increment(ref _inFlight);
                     _ = Task.Run(() => DispatchAsync(row, stop), stop);
-                }
             }
             catch (Exception ex)
             {
@@ -95,8 +91,6 @@ public sealed class DownloadOrchestrator : BackgroundService
     {
         try
         {
-            await _floodWait.WaitIfPausedAsync(stop).ConfigureAwait(false);
-
             var cfg = _host.ReadConfig();
             var chat = cfg.Chats.FirstOrDefault(c => c.Id == row.chat_id);
             if (chat == null)
@@ -126,9 +120,6 @@ public sealed class DownloadOrchestrator : BackgroundService
                 return;
             }
 
-            // Defer cleanly to the existing factoryService pipeline, which already enforces
-            // per-chat filters (download types, min size, ignore regex), routes by plugin,
-            // and updates the dedup index. The orchestrator stays a thin dispatcher.
             var result = await _host.Telegram!.ExecuteByMessageIdAsync(chat, row.message_id)
                 .ConfigureAwait(false);
 
@@ -139,10 +130,6 @@ public sealed class DownloadOrchestrator : BackgroundService
                 return;
             }
 
-            // ExecuteDirectAsync semantics (mirrored from the WPF flow):
-            //   IsSuccess + empty ErrorMessage           → real download succeeded
-            //   IsSuccess + non-empty ErrorMessage       → benign skip (dedup / filter)
-            //   !IsSuccess                                → real failure
             if (result.IsSuccess && string.IsNullOrEmpty(result.ErrorMessage))
             {
                 await _repo.SetStatusAsync(row.chat_id, row.message_id, MediaStatus.Done).ConfigureAwait(false);
@@ -161,9 +148,9 @@ public sealed class DownloadOrchestrator : BackgroundService
             }
         }
         catch (OperationCanceledException) { /* shutdown */ }
-        catch (Exception ex) when (TelegramClient.FloodWaitHelper.TryParseSeconds(ex, out var floodSec))
+        catch (Exception ex) when (FloodWaitHelper.TryParseSeconds(ex, out var floodSec))
         {
-            _floodWait.Report(ex, $"download:chat{row.chat_id}:msg{row.message_id}");
+            _budget.ReportFloodWait(TimeSpan.FromSeconds(floodSec));
             Log.Warning("Orchestrator FLOOD_WAIT {Seconds}s — re-queuing chat {ChatId} msg {MsgId}",
                 floodSec, row.chat_id, row.message_id);
             try
@@ -182,10 +169,6 @@ public sealed class DownloadOrchestrator : BackgroundService
                     .ConfigureAwait(false);
             }
             catch { /* swallow — we'll see it in the next poll */ }
-        }
-        finally
-        {
-            Interlocked.Decrement(ref _inFlight);
         }
     }
 

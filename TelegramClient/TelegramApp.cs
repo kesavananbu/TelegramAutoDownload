@@ -173,7 +173,11 @@ namespace TelegramClient
             factoryService.RefreshMessage = RefreshMessageAsync;
             factoryService.WireProgressCallbacks();
             factoryUserService = new FactoryUserService(chatIds, configParams);
-            _semaphore = new SemaphoreSlim(Math.Max(1, configParams.DownloadThreads));
+            var threads = Math.Max(1, configParams.DownloadThreads);
+            if (ApiBudget != null)
+                ApiBudget.ConfigureDownloadConcurrency(threads);
+            else
+                _semaphore = new SemaphoreSlim(threads);
 
             // Clean up stale .part files in the background so startup is not blocked.
             // Files older than 7 days are treated as abandoned (resume is unlikely after that long).
@@ -205,9 +209,11 @@ namespace TelegramClient
                 {
                     try
                     {
-                        var result = await Client.Channels_GetMessages(
-                            new InputChannel(ch.channel_id, ch.access_hash),
-                            new InputMessageID { id = msgId }).ConfigureAwait(false);
+                        var result = await InvokeTelegramApiAsync(
+                            ApiCallKind.Backfill,
+                            () => Client.Channels_GetMessages(
+                                new InputChannel(ch.channel_id, ch.access_hash),
+                                new InputMessageID { id = msgId })).ConfigureAwait(false);
                         CacheAccessHashesFromHistory(result);
                         var hit = result?.Messages?.OfType<Message>().FirstOrDefault(m => m.ID == msgId);
                         if (hit != null) return hit;
@@ -220,8 +226,10 @@ namespace TelegramClient
 
                 // Same path bootstrap uses — fetch a window of messages with id ≤ msgId and pick the target.
                 // The single-message offset trick (add_offset:-1) is unreliable for some channel peers.
-                var history = await Client.Messages_GetHistory(
-                    peer, offset_id: msgId + 1, limit: 100).ConfigureAwait(false);
+                var history = await InvokeTelegramApiAsync(
+                    ApiCallKind.Backfill,
+                    () => Client.Messages_GetHistory(peer, offset_id: msgId + 1, limit: 100))
+                    .ConfigureAwait(false);
                 CacheAccessHashesFromHistory(history);
                 var fromHistory = history?.Messages?.OfType<Message>().FirstOrDefault(m => m.ID == msgId);
                 if (fromHistory != null) return fromHistory;
@@ -340,14 +348,9 @@ namespace TelegramClient
                         }
                     }
 
-                    // Capture the current semaphore instance so a concurrent UpdateConfig
-                    // call that replaces _semaphore does not cause a SemaphoreFullException
-                    // when the finally block calls Release() on the wrong instance.
-                    var sem = _semaphore;
                     var task = Task.Run(async () =>
                     {
-                        await sem.WaitAsync();
-                        try
+                        using (await AcquireDownloadSlotAsync().ConfigureAwait(false))
                         {
 
                         ResultExecute resultExecute = new ResultExecute(chat.Name);
@@ -447,11 +450,9 @@ namespace TelegramClient
                                         {
                                             var capturedUpdate = updateNewMessage;
                                             var capturedChat   = chat;
-                                            var capturedSem    = sem;
                                             OnRetryReady?.Invoke(capturedChat.Name, resultExecute.FileName, async () =>
                                             {
-                                                await capturedSem.WaitAsync();
-                                                try
+                                                using (await AcquireDownloadSlotAsync().ConfigureAwait(false))
                                                 {
                                                     OnStarted?.Invoke(capturedChat.Name, infoMessage.ID);
                                                     var retryResult = await factoryService.ExecuteAsync(capturedUpdate, capturedChat);
@@ -464,7 +465,6 @@ namespace TelegramClient
                                                             ResultExecute = retryResult,
                                                         });
                                                 }
-                                                finally { capturedSem.Release(); }
                                             });
                                         }
                                     }
@@ -484,15 +484,12 @@ namespace TelegramClient
                         }
 
                         }
-                        finally
-                        {
-                            sem.Release();
-                        }
                     });
                     tasks.Add(task);
                 }
             }
-            await Task.WhenAll(tasks);
+            foreach (var dispatched in tasks)
+                ObserveUpdateTask(dispatched);
             }
             catch (Exception ex)
             {
@@ -553,8 +550,10 @@ namespace TelegramClient
 
                 while (true)
                 {
-                    var history = await Client.Messages_GetHistory(peer,
-                        offset_id: offsetId, limit: pageSize);
+                    var history = await InvokeTelegramApiAsync(
+                        ApiCallKind.Backfill,
+                        () => Client.Messages_GetHistory(peer, offset_id: offsetId, limit: pageSize))
+                        .ConfigureAwait(false);
 
                     // Use the TOTAL message count (including MessageService and MessageEmpty) for
                     // pagination control. A page that contains only service messages would have
@@ -606,13 +605,10 @@ namespace TelegramClient
                             OnEnqueued?.Invoke(chatDto.Name, msg.ID, preview);
                     }
 
-                    var sem = _semaphore; // Capture before lambda — see Client_OnUpdates for explanation
-
                     // Process native media with full UI lifecycle (queued → downloading → complete)
                     var mediaTasks = mediaMessages.Select(msg => Task.Run(async () =>
                     {
-                        await sem.WaitAsync();
-                        try
+                        using (await AcquireDownloadSlotAsync().ConfigureAwait(false))
                         {
                             OnStarted?.Invoke(chatDto.Name, msg.ID);
                             var result = await factoryService.ExecuteDirectAsync(msg, chatDto);
@@ -633,14 +629,12 @@ namespace TelegramClient
                                 });
                             }
                         }
-                        finally { sem.Release(); }
                     }));
 
                     // Process URL/magnet plugin messages with UI lifecycle (Start Icon is not sent during sync)
                     var urlTasks = urlMessages.Select(msg => Task.Run(async () =>
                     {
-                        await sem.WaitAsync();
-                        try
+                        using (await AcquireDownloadSlotAsync().ConfigureAwait(false))
                         {
                             OnStarted?.Invoke(chatDto.Name, msg.ID);
                             var result = await factoryService.ExecuteDirectAsync(msg, chatDto);
@@ -655,14 +649,12 @@ namespace TelegramClient
                                 });
                             }
                         }
-                        finally { sem.Release(); }
                     }));
 
                     // Process text captures — save as .txt files with full UI lifecycle
                     var textCaptureTasks = textCaptureMessages.Select(msg => Task.Run(async () =>
                     {
-                        await sem.WaitAsync();
-                        try
+                        using (await AcquireDownloadSlotAsync().ConfigureAwait(false))
                         {
                             OnStarted?.Invoke(chatDto.Name, msg.ID);
                             var result = await SaveCapturedTextAsync(msg, chatDto);
@@ -677,7 +669,6 @@ namespace TelegramClient
                                 });
                             }
                         }
-                        finally { sem.Release(); }
                     }));
 
                     await Task.WhenAll(mediaTasks.Concat(urlTasks).Concat(textCaptureTasks));
@@ -709,9 +700,12 @@ namespace TelegramClient
         public async Task<ResultExecute?> ExecuteByMessageIdAsync(ChatDto chat, int msgId)
         {
             if (factoryService == null) return null;
-            var msg = await RefreshMessageAsync(chat, msgId).ConfigureAwait(false);
-            if (msg == null) return null;
-            return await factoryService.ExecuteDirectAsync(msg, chat).ConfigureAwait(false);
+            using (await AcquireDownloadSlotAsync().ConfigureAwait(false))
+            {
+                var msg = await RefreshMessageAsync(chat, msgId).ConfigureAwait(false);
+                if (msg == null) return null;
+                return await factoryService.ExecuteDirectAsync(msg, chat).ConfigureAwait(false);
+            }
         }
 
         /// <summary>
@@ -721,7 +715,8 @@ namespace TelegramClient
         public async Task<ResultExecute?> ExecuteMessageAsync(ChatDto chat, Message msg)
         {
             if (factoryService == null) return null;
-            return await factoryService.ExecuteDirectAsync(msg, chat).ConfigureAwait(false);
+            using (await AcquireDownloadSlotAsync().ConfigureAwait(false))
+                return await factoryService.ExecuteDirectAsync(msg, chat).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -739,8 +734,11 @@ namespace TelegramClient
                 return new InputPeerChannel(chatDto.Id, hash);
             }
 
-            var dialogsResult = await Client.Messages_GetDialogs(
-                offset_date: default, offset_id: 0, offset_peer: null!, limit: 500, hash: 0);
+            var dialogsResult = await InvokeTelegramApiAsync(
+                ApiCallKind.Interactive,
+                () => Client.Messages_GetDialogs(
+                    offset_date: default, offset_id: 0, offset_peer: null!, limit: 500, hash: 0))
+                .ConfigureAwait(false);
             if (dialogsResult is not TL.Messages_Dialogs dlg)
                 return null;
 
@@ -777,7 +775,9 @@ namespace TelegramClient
                 var peer = await ResolveInputPeerAsync(chatDto).ConfigureAwait(false);
                 if (peer == null) return [];
 
-                var history = await Client.Messages_GetHistory(peer, limit: count);
+                var history = await InvokeTelegramApiAsync(
+                    ApiCallKind.Interactive,
+                    () => Client.Messages_GetHistory(peer, limit: count)).ConfigureAwait(false);
                 var result  = new List<HistoryEntry>();
 
                 // Extract users dictionary from the concrete history result type
@@ -830,7 +830,9 @@ namespace TelegramClient
                 if (peer == null)
                     return (Array.Empty<Message>(), offsetId, false);
 
-                var history = await Client.Messages_GetHistory(peer, offset_id: offsetId, limit: pageSize)
+                var history = await InvokeTelegramApiAsync(
+                    ApiCallKind.Interactive,
+                    () => Client.Messages_GetHistory(peer, offset_id: offsetId, limit: pageSize))
                     .ConfigureAwait(false);
                 if (history.Messages.Length == 0)
                     return (Array.Empty<Message>(), offsetId, false);
@@ -864,8 +866,7 @@ namespace TelegramClient
 
             foreach (var msg in messages)
             {
-                await _semaphore.WaitAsync().ConfigureAwait(false);
-                try
+                using (await AcquireDownloadSlotAsync().ConfigureAwait(false))
                 {
                     var preview = GetPreviewFileName(msg) ?? GetTextPluginQueuePreview(msg);
                     if (preview != null)
@@ -904,10 +905,6 @@ namespace TelegramClient
                             ResultExecute = result,
                         }).ConfigureAwait(false);
                     }
-                }
-                finally
-                {
-                    _semaphore.Release();
                 }
             }
         }
@@ -1381,8 +1378,10 @@ namespace TelegramClient
 
                 while (true)
                 {
-                    var history = await Client.Messages_GetHistory(peer,
-                        offset_id: offsetId, limit: pageSize);
+                    var history = await InvokeTelegramApiAsync(
+                        ApiCallKind.Backfill,
+                        () => Client.Messages_GetHistory(peer, offset_id: offsetId, limit: pageSize))
+                        .ConfigureAwait(false);
 
                     if (history.Messages.Length == 0) break;
 
@@ -1396,30 +1395,27 @@ namespace TelegramClient
                         .Where(m => m.media != null && m.ID > watermark)
                         .ToList();
 
-                    var sem = _semaphore; // Capture before lambda — see Client_OnUpdates for explanation
-                    var tasks = mediaMessages.Select(msg => Task.Run(async () =>
+                    foreach (var msg in mediaMessages)
                     {
-                        await sem.WaitAsync();
-                        try
+                        var catchUpTask = Task.Run(async () =>
                         {
-                            // Mark as seen so live updates don't re-download it (atomic max-update)
-                            _highWatermark.AddOrUpdate(channelId, msg.ID, (_, prev) => Math.Max(prev, msg.ID));
+                            using (await AcquireDownloadSlotAsync().ConfigureAwait(false))
+                            {
+                                _highWatermark.AddOrUpdate(channelId, msg.ID, (_, prev) => Math.Max(prev, msg.ID));
 
-                            var result = await factoryService.ExecuteDirectAsync(msg, chatDto);
-                            // Only notify on genuine new downloads — not dedup skips (which have ErrorMessage set)
-                            if (result.IsSuccess && string.IsNullOrEmpty(result.ErrorMessage) && OnSaved != null)
-                                await OnSaved.Invoke(new ResultMessageEvent
-                                {
-                                    Chat = chatDto,
-                                    Message = msg.message,
-                                    PostAuthor = msg.post_author,
-                                    ResultExecute = result,
-                                });
-                        }
-                        finally { sem.Release(); }
-                    }));
-
-                    await Task.WhenAll(tasks);
+                                var result = await factoryService.ExecuteDirectAsync(msg, chatDto);
+                                if (result.IsSuccess && string.IsNullOrEmpty(result.ErrorMessage) && OnSaved != null)
+                                    await OnSaved.Invoke(new ResultMessageEvent
+                                    {
+                                        Chat = chatDto,
+                                        Message = msg.message,
+                                        PostAuthor = msg.post_author,
+                                        ResultExecute = result,
+                                    });
+                            }
+                        });
+                        ObserveUpdateTask(catchUpTask);
+                    }
 
                     // Pagination: base stop condition on total page size (incl. service messages)
                     if (history.Messages.Length < pageSize) break;
@@ -1457,7 +1453,11 @@ namespace TelegramClient
                     throw new InvalidOperationException($"reaction: Unknown peer type, isChannel: {isChannel}, isGroup: {isGroup}");
                 }
 
-                await Client.Messages_SendReaction(inputPeer, message.ID, new[] { new ReactionEmoji { emoticon = reactionIcon } });
+                await InvokeTelegramApiAsync(
+                    ApiCallKind.Live,
+                    () => Client.Messages_SendReaction(
+                        inputPeer, message.ID, new[] { new ReactionEmoji { emoticon = reactionIcon } }))
+                    .ConfigureAwait(false);
             }
             catch (Exception e)
             {
