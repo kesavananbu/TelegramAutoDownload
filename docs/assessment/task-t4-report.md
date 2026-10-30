@@ -5,17 +5,13 @@
 
 ## Commits (finding IDs)
 
-| Commit | Findings |
-|--------|----------|
-| `security(F-07): secret file writes and data dir modes` | F-07 |
-| `security(F-03,F-23): PBKDF2 passwords and timing-safe login` | F-03, F-23 |
-| `security(F-01,F-04,F-08,F-20): web auth credentials and sessions` | F-01, F-04, F-08, F-20 |
-| `security(F-02): download path and folder template policy` | F-02 |
-| `security(F-05,F-06,F-17,F-18): pipeline rate limits and headers` | F-05, F-06, F-17, F-18 |
-| `chore(docker): require WEB_PASSWORD in compose` | F-01 |
-| `fix(web): auth UI for must-change-password` | F-01 |
-| `test(security): web auth and path regression tests` | all |
-| `docs: task T4 report` | — |
+| SHA | Message | Findings |
+|-----|---------|----------|
+| 1579a1e | security(F-07): atomic secret writes… | F-07 |
+| 46f4565 | security(F-03,F-23): PBKDF2… (+ WebAuthService/Middleware) | F-01, F-03, F-04, F-08, F-20, F-23 |
+| 09ad8b3 | security(F-02): constrain download paths… | F-02 |
+| 6759e41 | security(F-05,F-06,F-17,F-18): auth pipeline… (+ compose/wwwroot) | F-01, F-05, F-06, F-17, F-18 |
+| 604ef37 | docs + regression tests | tests for all in-scope IDs |
 
 ## Verification
 
