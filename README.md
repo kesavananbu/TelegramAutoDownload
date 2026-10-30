@@ -342,6 +342,20 @@ TelegramAutoDownload (WPF, entry point)
 ## Security notes
 
 - **Web dashboard (headless):** set a strong `WEB_PASSWORD` before use. Do not expose the dashboard on the public internet without HTTPS and additional access controls (reverse proxy, firewall).
+
+#### Dashboard login settings
+
+| Variable | Effect |
+|---|---|
+| `WEB_USERNAME` / `WEB_PASSWORD` | Dashboard credentials. Docker Compose refuses to start without `WEB_PASSWORD`; `changeme` is rejected. |
+| *(neither set, no `web-auth.json`)* | A one-time random password is printed to container stdout (`docker logs`), and you must change it at first sign-in. |
+| `WEB_PASSWORD_RESET=true` | Replace an existing stored password with `WEB_PASSWORD`. Without it, a `WEB_PASSWORD` that disagrees with `web-auth.json` stops startup with an explanatory error. |
+| `WEB_AUTH_TRUSTED_PROXIES` | Comma-separated proxy IPs whose `X-Forwarded-For`/`X-Forwarded-Proto` are trusted, so rate limiting sees real client IPs and cookies are marked `Secure` behind HTTPS. |
+| `WEB_AUTH_SECURE_COOKIES` | Force the `Secure` cookie flag on or off. |
+| `WEB_AUTH_ENABLED=false` | Disables login. Only allowed on a loopback bind (`LISTEN_URL=http://127.0.0.1:…`) unless `WEB_AUTH_DISABLE_I_UNDERSTAND=true` is also set. |
+| `LISTEN_URL` | Bind address (default `http://0.0.0.0:8080`). |
+
+Changing the password or signing out invalidates every existing session. Sign-in attempts are rate-limited, and successful and failed logins are recorded in `DATA_DIR/audit-<date>.log` (never the password).
 - **Telegram session:** `session.dat` grants full API access to the linked account. In Docker it is stored at **`/data/TelegramAutoDownload/session.dat`** (under the mounted data volume). Back it up and restrict file permissions; treat backups like password backups.
 - **Account risk:** aggressive automated scanning or high download volume can trigger Telegram rate limits or account action. Prefer a dedicated account where practical.
 
@@ -445,7 +459,7 @@ Avoid `chmod 777`; use ownership aligned to the `user:` you run as.
 ```bash
 docker build -t telegram-auto-download:local .
 docker run --rm -p 8080:8080 \
-  -e WEB_AUTH_ENABLED=false \
+  -e WEB_PASSWORD='choose-a-strong-password' \
   -v "$(pwd)/data:/data" \
   -v "$(pwd)/downloads:/downloads" \
   telegram-auto-download:local
