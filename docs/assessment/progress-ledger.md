@@ -144,6 +144,20 @@ Surviving legal items, reprioritized: add the missing `LICENSE`; add `NOTICE` fo
 
 Serialized implementer → reviewer loops after Task 1. Order: Milestone 2 (account ban, dedup, corruption, session path) → Milestone 3 (security F-01 chain first) → Milestone 4 (UI free wins).
 
+## Milestones 2–5 — parallel worktree fan-out: IN PROGRESS (2026-10-30)
+
+Seven `best-of-n-runner` agents on `composer-2.5-fast`, each in an isolated worktree on branch `er/<track>` off `enterprise-readiness@a458fd3`, with disjoint file ownership. Controller merges, reconciles `Program.cs`, runs full build + both test suites.
+
+| Track | Agent | Branch | Scope |
+|---|---|---|---|
+| T1 API budget | [T1](f4e87ba8-9bcb-47f5-9116-0ba5ca96525e) | `er/t1-api-budget` | ADR-003, live-path flood awareness, non-blocking update pump, persisted flood state |
+| T2 dedup/SQLite | [T2](0d6f8cd6-e830-4d61-bdee-7a910a7bcb81) | `er/t2-dedup-sqlite` | ADR-010 idempotent import, `SessionFile` truth, drop `Cache=Shared`, Sqlite CVE bump |
+| T3 data integrity | [T3](3047f76d-6bd3-448c-8fc9-95649b1e4beb) | `er/t3-data-integrity` | `.part` size check, chunk seek, atomic config, regex F-13, disk F-15 |
+| T4 web security | [T4](81ae5c3d-a9fb-4907-8365-15f234ad5b5f) | `er/t4-web-security` | F-01–F-08, F-17, F-18, F-20, F-23, compose defaults |
+| T5 dashboard UI | [T5](09d884c3-0aba-40aa-8de2-d967ce27bf4a) | `er/t5-dashboard-ui` | Toasts, error surfacing, rollback, polling, free wins, a11y, responsive, customization |
+| T6 desktop supply chain | [T6](9b54bb0a-4917-4ea8-9bfb-645bd882c201) | `er/t6-desktop-supply-chain` | Flaky tests, F-09 updater integrity, F-10 yt-dlp sums, F-22, export secrets |
+| T7 docs/hygiene | [T7](2529311f-911d-4678-98b8-929f27fa04db) | `er/t7-docs-hygiene` | LICENSE/NOTICE/SECURITY.md, README truth, `.gitignore`, untrack `_baseline_cov`, CI consistency |
+
 ## Decisions log
 
 | Date | Decision | Rationale |
@@ -152,6 +166,8 @@ Serialized implementer → reviewer loops after Task 1. Order: Milestone 2 (acco
 | 2026-09-30 | Analysis parallel, implementation serial | Read-only agents with disjoint outputs cannot conflict; concurrent C# implementers would. |
 | 2026-09-30 | Exactly one agent owns `dotnet build` | Concurrent builds contend on `obj/`/`bin/` file locks. |
 | 2026-10-01 | Commercial goal dropped; harden as free personal tool | User decision via questionnaire. Compliance/marketplace docs kept as archive only. |
+| 2026-10-30 | Parallel implementers allowed only in isolated worktrees with disjoint file ownership | Removes the shared `obj/` contention that forced serial work; controller owns merge + full test run. |
+| 2026-10-30 | Keep `AppVersion.GitHubOwner = "il90il90"`; adopt MIT Option C | Owner's compose publishes from `ghcr.io/il90il90`; resolves open questions 2 and 3. |
 
 ## Open questions (non-blocking)
 
