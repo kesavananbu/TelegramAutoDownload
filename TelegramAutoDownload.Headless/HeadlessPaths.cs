@@ -19,19 +19,26 @@ public static class HeadlessPaths
         ?? Path.Combine(DataDir, "downloads");
 
     public static string ConfigFile  => Path.Combine(DataDir, "config.json");
-    public static string SessionFile => Path.Combine(DataDir, "session.dat");
     public static string DatabaseFile => Path.Combine(DataDir, "tad.db");
     public static string LogsDir     => Path.Combine(DataDir, "logs");
     public static string ToolsDir    => Path.Combine(DataDir, "tools");
 
     /// <summary>
-    /// Legacy dedup index path from the WPF app (kept around so we can import it
-    /// on first launch). Honours <c>XDG_CONFIG_HOME</c> on Linux, so a Docker run
-    /// with <c>XDG_CONFIG_HOME=/data</c> matches existing setups.
+    /// Same directory WTelegramClient uses for <c>session.dat</c> and the WPF
+    /// <c>downloaded_ids.json</c> index (<see cref="TelegramClient.TelegramApp"/>).
+    /// On Linux/Docker, set <c>XDG_CONFIG_HOME</c> (e.g. to <c>/data</c>) so this resolves
+    /// under the mounted volume — not under <see cref="DataDir"/> when <c>DATA_DIR</c> is set.
     /// </summary>
+    public static string WTelegramConfigDir =>
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "TelegramAutoDownload");
+
+    public static string SessionFile => Path.Combine(WTelegramConfigDir, "session.dat");
+
+    /// <summary>Legacy dedup index written by <c>FileDownloadIndex</c> in the WPF/live path.</summary>
     public static string LegacyDedupIndexFile =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                     "TelegramAutoDownload", "downloaded_ids.json");
+        Path.Combine(WTelegramConfigDir, "downloaded_ids.json");
 
     static HeadlessPaths()
     {

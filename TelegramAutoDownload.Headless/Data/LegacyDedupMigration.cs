@@ -4,9 +4,9 @@ using Serilog;
 namespace TelegramAutoDownload.Headless.Data;
 
 /// <summary>
-/// One-time import of the WPF app's <c>downloaded_ids.json</c> file into the
-/// <c>LegacyDedup</c> table. Runs at most once per database — subsequent launches
-/// detect that the table already has rows and skip the work entirely.
+/// Reconciles the WPF/live <c>downloaded_ids.json</c> file into <c>LegacyDedup</c> on every
+/// startup using <c>INSERT OR IGNORE</c>, so IDs appended by <c>FileDownloadIndex</c> after the
+/// first import are not lost.
 /// </summary>
 public static class LegacyDedupMigration
 {
@@ -14,16 +14,9 @@ public static class LegacyDedupMigration
     {
         var path = legacyPath ?? HeadlessPaths.LegacyDedupIndexFile;
 
-        var existing = await repo.CountLegacyDedupAsync();
-        if (existing > 0)
-        {
-            Log.Debug("LegacyDedup already has {Count} row(s); skipping import", existing);
-            return;
-        }
-
         if (!File.Exists(path))
         {
-            Log.Information("No legacy dedup index at {Path}; starting with a fresh database", path);
+            Log.Debug("No legacy dedup index at {Path}; skipping reconciliation", path);
             return;
         }
 
@@ -33,16 +26,31 @@ public static class LegacyDedupMigration
             var ids  = JsonSerializer.Deserialize<List<long>>(json);
             if (ids == null || ids.Count == 0)
             {
-                Log.Information("Legacy dedup index {Path} was empty", path);
+                Log.Debug("Legacy dedup index {Path} was empty", path);
                 return;
             }
 
+            var before = await repo.CountLegacyDedupAsync();
             await repo.BulkInsertLegacyDedupAsync(ids);
-            Log.Information("Imported {Count} legacy dedup IDs from {Path}", ids.Count, path);
+            var after = await repo.CountLegacyDedupAsync();
+            var inserted = after - before;
+
+            if (inserted > 0)
+                Log.Information(
+                    "Reconciled legacy dedup: {Inserted} new ID(s) from {Path} ({Total} row(s) in LegacyDedup)",
+                    inserted, path, after);
+            else
+                Log.Debug("Legacy dedup index {Path} already fully reflected in LegacyDedup ({Total} row(s))",
+                    path, after);
+        }
+        catch (JsonException ex)
+        {
+            Log.Warning(ex, "Legacy dedup index at {Path} is not valid JSON — skipping reconciliation", path);
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "Failed to import legacy dedup index from {Path} — continuing with empty table", path);
+            Log.Warning(ex, "Failed to reconcile legacy dedup index from {Path}", path);
+            throw;
         }
     }
 }

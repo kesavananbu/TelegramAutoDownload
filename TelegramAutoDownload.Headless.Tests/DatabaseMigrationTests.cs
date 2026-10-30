@@ -57,6 +57,32 @@ public sealed class DatabaseMigrationTests
     }
 
     [Fact]
+    public async Task InitializeAsync_refuses_database_newer_than_embedded_migrations()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"tad-migrate-{Guid.NewGuid():N}.db");
+        try
+        {
+            var db = new Database(dbPath);
+            await db.InitializeAsync();
+
+            await using (var conn = db.Open())
+            {
+                await conn.ExecuteAsync(
+                    "INSERT INTO SchemaMigration (version, name) VALUES (9999, '999_future.sql')");
+            }
+
+            var act = async () => await db.InitializeAsync();
+            await act.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("*newer than this application*");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(dbPath)) File.Delete(dbPath);
+        }
+    }
+
+    [Fact]
     public async Task InitializeAsync_requeues_stuck_in_progress_rows()
     {
         var dbPath = Path.Combine(Path.GetTempPath(), $"tad-migrate-{Guid.NewGuid():N}.db");

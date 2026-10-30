@@ -12,7 +12,7 @@ namespace TelegramAutoDownload.Headless.Data;
 ///
 /// Migrations are plain <c>*.sql</c> files embedded in the assembly under
 /// <c>Data/Schema/</c>. File names must start with a numeric prefix
-/// (e.g. <c>001_initial.sql</c>) — they are applied in lexical order and recorded
+/// (e.g. <c>001_initial.sql</c>) — they are applied in numeric version order and recorded
 /// in <c>SchemaMigration</c> so each script runs exactly once per database.
 /// </summary>
 public sealed class Database
@@ -24,8 +24,7 @@ public sealed class Database
         var path = dbPath ?? HeadlessPaths.DatabaseFile;
         var dir = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-        // Mode=ReadWriteCreate so a missing file is created automatically.
-        ConnectionString = $"Data Source={path};Mode=ReadWriteCreate;Cache=Shared";
+        ConnectionString = $"Data Source={path};Mode=ReadWriteCreate";
     }
 
     /// <summary>
@@ -60,6 +59,30 @@ public sealed class Database
             Log.Information("Crash recovery: reverted {Count} stuck in_progress row(s) to queued", reverted);
     }
 
+    internal static IReadOnlyList<(long Version, string FileName, string ResourceName)> DiscoverEmbeddedMigrations()
+    {
+        var asm = typeof(Database).Assembly;
+        var list = new List<(long Version, string FileName, string ResourceName)>();
+
+        foreach (var resource in asm.GetManifestResourceNames())
+        {
+            if (!resource.Contains(".Schema.", StringComparison.Ordinal) || !resource.EndsWith(".sql", StringComparison.Ordinal))
+                continue;
+
+            var fileName = resource[(resource.LastIndexOf(".Schema.", StringComparison.Ordinal) + ".Schema.".Length)..];
+            var versionPart = fileName.Split('_')[0];
+            if (!long.TryParse(versionPart, out var version))
+            {
+                throw new InvalidOperationException(
+                    $"Embedded migration {resource} does not start with a numeric version prefix.");
+            }
+
+            list.Add((Version: version, FileName: fileName, ResourceName: resource));
+        }
+
+        return list.OrderBy(m => m.Version).ToList();
+    }
+
     private static async Task ApplyMigrationsAsync(SqliteConnection conn)
     {
         await conn.ExecuteAsync("""
@@ -70,41 +93,50 @@ public sealed class Database
             );
             """);
 
-        var applied = (await conn.QueryAsync<long>("SELECT version FROM SchemaMigration"))
-            .ToHashSet();
+        var embedded = DiscoverEmbeddedMigrations();
+        if (embedded.Count == 0)
+            throw new InvalidOperationException("No embedded schema migrations found in the assembly.");
+
+        var maxEmbeddedVersion = embedded[^1].Version;
+
+        var applied = (await conn.QueryAsync<long>("SELECT version FROM SchemaMigration")).ToHashSet();
+        var newerThanApp = applied.Where(v => v > maxEmbeddedVersion).ToList();
+        if (newerThanApp.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"Database schema version(s) [{string.Join(", ", newerThanApp)}] are newer than this application " +
+                $"(max embedded migration {maxEmbeddedVersion}). Upgrade the app before opening this database.");
+        }
+
+        var pending = embedded.Where(m => !applied.Contains(m.Version)).ToList();
+        if (pending.Count == 0)
+            return;
 
         var asm = typeof(Database).Assembly;
-        var scripts = asm.GetManifestResourceNames()
-            .Where(n => n.Contains(".Schema.") && n.EndsWith(".sql"))
-            .OrderBy(n => n)
-            .ToList();
-
-        foreach (var resource in scripts)
+        await conn.ExecuteAsync("BEGIN IMMEDIATE");
+        try
         {
-            // Resource name looks like "TelegramAutoDownload.Headless.Data.Schema.001_initial.sql"
-            var fileName = resource[(resource.LastIndexOf(".Schema.", StringComparison.Ordinal) + ".Schema.".Length)..];
-            var versionPart = fileName.Split('_')[0];
-            if (!long.TryParse(versionPart, out var version))
+            foreach (var (version, fileName, resource) in pending)
             {
-                Log.Warning("Skipping migration {Resource} — file name does not start with a numeric version", resource);
-                continue;
+                await using var stream = asm.GetManifestResourceStream(resource)
+                    ?? throw new InvalidOperationException($"Embedded resource {resource} not found");
+                using var reader = new StreamReader(stream);
+                var sql = await reader.ReadToEndAsync();
+
+                await conn.ExecuteAsync(sql);
+                await conn.ExecuteAsync(
+                    "INSERT INTO SchemaMigration (version, name) VALUES (@version, @name)",
+                    new { version, name = fileName });
+
+                Log.Information("Applied schema migration {Version} {Name}", version, fileName);
             }
-            if (applied.Contains(version)) continue;
 
-            await using var stream = asm.GetManifestResourceStream(resource)
-                ?? throw new InvalidOperationException($"Embedded resource {resource} not found");
-            using var reader = new StreamReader(stream);
-            var sql = await reader.ReadToEndAsync();
-
-            using var tx = conn.BeginTransaction();
-            await conn.ExecuteAsync(sql, transaction: tx);
-            await conn.ExecuteAsync(
-                "INSERT INTO SchemaMigration (version, name) VALUES (@version, @name)",
-                new { version, name = fileName },
-                transaction: tx);
-            tx.Commit();
-
-            Log.Information("Applied schema migration {Version} {Name}", version, fileName);
+            await conn.ExecuteAsync("COMMIT");
+        }
+        catch
+        {
+            await conn.ExecuteAsync("ROLLBACK");
+            throw;
         }
     }
 }
