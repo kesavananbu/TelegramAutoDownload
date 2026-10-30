@@ -33,7 +33,7 @@ async function submitPasswordChange(current, newPwd, confirm, errEl) {
       method: 'POST',
       body: JSON.stringify({ currentPassword: current, newPassword: newPwd, confirmPassword: confirm }),
     });
-    applyDefaultPasswordUi(!!res.defaultPassword);
+    applyDefaultPasswordUi(!!res.mustChangePassword);
     showPasswordChangeModal(false);
     $('#pwd-current').value = '';
     $('#pwd-new').value = '';
@@ -84,7 +84,7 @@ function leaveTelegramApp() {
 
 async function checkWebAuth() {
   const ws = await fetch('/api/web-auth/status', { credentials: 'include' }).then(r => r.json());
-  applyDefaultPasswordUi(!!ws.defaultPassword);
+  applyDefaultPasswordUi(!!ws.mustChangePassword);
   if (!ws.enabled) {
     webAuthenticated = true;
     showWebLogin(false);
@@ -96,7 +96,7 @@ async function checkWebAuth() {
     return false;
   }
   showWebLogin(false);
-  if (ws.defaultPassword) {
+  if (ws.mustChangePassword) {
     showPasswordChangeModal(true);
     return true;
   }
@@ -141,6 +141,10 @@ async function api(path, opts = {}) {
     loggedIn = false;
     showWebLogin(true);
     throw new Error('Session expired — sign in again.');
+  }
+  if (r.status === 403 && data.error === 'passwordChangeRequired') {
+    showPasswordChangeModal(true);
+    throw new Error('Change your dashboard password to continue.');
   }
   if (!r.ok) {
     const err = new Error(data.error || `HTTP ${r.status}`);
@@ -344,8 +348,8 @@ $('#btn-web-login').onclick = async () => {
     webAuthenticated = true;
     $('#web-password').value = '';
     showWebLogin(false);
-    applyDefaultPasswordUi(!!data.defaultPassword);
-    if (data.defaultPassword) {
+    applyDefaultPasswordUi(!!data.mustChangePassword);
+    if (data.mustChangePassword) {
       showPasswordChangeModal(true);
       return;
     }
@@ -1006,7 +1010,7 @@ async function refreshStatus() {
 async function loadSettings() {
   try {
     const [s, ws] = await Promise.all([api('/api/settings'), api('/api/web-auth/status')]);
-    applyDefaultPasswordUi(!!ws.defaultPassword);
+    applyDefaultPasswordUi(!!ws.mustChangePassword);
     $('#s-folder').value = s.downloadFolder || '';
     if ($('#s-folder-layout')) $('#s-folder-layout').value = s.folderLayout || 'TypeFirst';
     $('#s-threads').value = s.downloadThreads || 3;

@@ -1,6 +1,10 @@
+using System.Net;
 using System.Text.Json;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
@@ -9,7 +13,9 @@ using TelegramAutoDownload.Headless;
 using TelegramAutoDownload.Headless.Data;
 using TelegramAutoDownload.Headless.Logging;
 using TelegramAutoDownload.Headless.Scanning;
+using TelegramAutoDownload.Headless.Security;
 using TelegramAutoDownload.Models;
+using TelegramClient;
 using TelegramClient.Models;
 
 Log.Logger = new LoggerConfiguration()
@@ -20,7 +26,16 @@ Log.Logger = new LoggerConfiguration()
                   retainedFileCountLimit: 7,
                   shared: true,
                   outputTemplate: TelegramAutoDownload.Headless.Logging.HeadlessLogFormat.FileOutputTemplate)
+    .WriteTo.Logger(lc => lc
+        .Filter.ByIncludingOnly(e =>
+            e.MessageTemplate.Text.StartsWith("web-auth.", StringComparison.Ordinal))
+        .WriteTo.File(Path.Combine(HeadlessPaths.DataDir, "audit-.log"),
+                      rollingInterval: RollingInterval.Day,
+                      retainedFileCountLimit: 30,
+                      shared: true))
     .CreateLogger();
+
+FolderTemplateHelper.AllowAbsolutePaths = false;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseSerilog();
@@ -36,17 +51,53 @@ builder.Services.AddSingleton<ScanRateLimits>();
 builder.Services.AddSingleton<BootstrapManager>();
 builder.Services.AddSingleton<ChatDownloadTester>();
 builder.Services.AddSingleton<HeadlessLogReader>();
+builder.Services.AddSingleton<WebAuthLoginLimiter>();
 builder.Services.AddSingleton(WebAuthService.Load());
 builder.Services.AddHostedService<DownloadOrchestrator>();
+
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+    var trusted = Environment.GetEnvironmentVariable("WEB_AUTH_TRUSTED_PROXIES");
+    if (!string.IsNullOrWhiteSpace(trusted))
+    {
+        foreach (var part in trusted.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (IPAddress.TryParse(part, out var ip))
+                options.KnownProxies.Add(ip);
+        }
+    }
+});
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("login", httpContext =>
+    {
+        var ip = WebAuthHttp.GetClientIp(httpContext)?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(
+            ip,
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(15),
+                QueueLimit = 0,
+            });
+    });
+});
 
 builder.WebHost.UseUrls(Environment.GetEnvironmentVariable("LISTEN_URL") ?? "http://0.0.0.0:8080");
 
 var app = builder.Build();
 
-// Serve the static web UI from wwwroot/
-app.UseDefaultFiles();
-app.UseStaticFiles();
+app.UseForwardedHeaders();
+app.UseRateLimiter();
 app.UseWebAuth();
+app.Use(AddSecurityHeaders);
+app.UseDefaultFiles();
+app.UseStaticFiles(new StaticFileOptions { ServeUnknownFileTypes = false });
 
 // ─── Web UI login (username/password — public endpoints) ─────────────────────
 app.MapGet("/api/web-auth/status", (WebAuthService auth, HttpContext ctx) =>
@@ -55,17 +106,23 @@ app.MapGet("/api/web-auth/status", (WebAuthService auth, HttpContext ctx) =>
         return Results.Json(new { enabled = false, authenticated = true });
 
     var ok = auth.TryGetSession(ctx.Request, out var user);
+    if (!ok)
+        return Results.Json(new { enabled = true, authenticated = false });
+
     return Results.Json(new
     {
-        enabled           = true,
-        authenticated     = ok,
-        username          = ok ? user : null,
-        defaultPassword   = auth.UsingDefaultPassword,
-        mustChangePassword = auth.UsingDefaultPassword,
+        enabled            = true,
+        authenticated      = true,
+        username           = user,
+        mustChangePassword = auth.MustChangePassword,
     });
 });
 
-app.MapPost("/api/web-auth/login", (WebAuthService auth, HttpContext ctx, WebLoginRequest req) =>
+app.MapPost("/api/web-auth/login", (
+    WebAuthService auth,
+    WebAuthLoginLimiter limiter,
+    HttpContext ctx,
+    WebLoginRequest req) =>
 {
     if (!auth.Enabled)
         return Results.Json(new { ok = true, disabled = true });
@@ -73,20 +130,53 @@ app.MapPost("/api/web-auth/login", (WebAuthService auth, HttpContext ctx, WebLog
     if (string.IsNullOrWhiteSpace(req.Username) || string.IsNullOrEmpty(req.Password))
         return Results.BadRequest(new { error = "Username and password are required" });
 
-    if (!auth.ValidateCredentials(req.Username, req.Password))
-        return Results.Json(new { error = "Invalid username or password" }, statusCode: StatusCodes.Status401Unauthorized);
+    var ip = WebAuthHttp.GetClientIp(ctx);
+    if (limiter.IsLockedOut(req.Username, ip, out _))
+    {
+        Log.Warning("web-auth.login.locked user={User} ip={Ip}", req.Username?.Trim(), ip);
+        return Results.Json(
+            new { error = "Invalid username or password" },
+            statusCode: StatusCodes.Status401Unauthorized);
+    }
 
-    auth.SignIn(ctx.Response, auth.Username);
-    return Results.Json(new { ok = true, username = auth.Username, defaultPassword = auth.UsingDefaultPassword });
-});
+    if (!auth.ValidateCredentials(req.Username, req.Password))
+    {
+        limiter.RecordFailure(req.Username, ip);
+        Log.Warning("web-auth.login.failed user={User} ip={Ip}", req.Username?.Trim(), ip);
+        return Results.Json(new { error = "Invalid username or password" }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    limiter.RecordSuccess(req.Username, ip);
+    Log.Information("web-auth.login.success user={User} ip={Ip}", auth.Username, ip);
+    auth.SignIn(ctx, auth.Username);
+    return Results.Json(new
+    {
+        ok = true,
+        username = auth.Username,
+        mustChangePassword = auth.MustChangePassword,
+    });
+}).RequireRateLimiting("login");
 
 app.MapPost("/api/web-auth/logout", (WebAuthService auth, HttpContext ctx) =>
 {
     auth.SignOut(ctx.Response);
+    Log.Information("web-auth.logout user={User} ip={Ip}", auth.Username, WebAuthHttp.GetClientIp(ctx));
     return Results.Json(new { ok = true });
 });
 
-app.MapPost("/api/web-auth/change-password", (WebAuthService auth, WebChangePasswordRequest req) =>
+app.MapPost("/api/web-auth/logout-all", (WebAuthService auth, HttpContext ctx) =>
+{
+    auth.RevokeAllSessions();
+    auth.SignOut(ctx.Response);
+    Log.Information("web-auth.logout-all user={User} ip={Ip}", auth.Username, WebAuthHttp.GetClientIp(ctx));
+    return Results.Json(new { ok = true });
+});
+
+app.MapPost("/api/web-auth/change-password", (
+    WebAuthService auth,
+    WebAuthLoginLimiter limiter,
+    HttpContext ctx,
+    WebChangePasswordRequest req) =>
 {
     if (!auth.Enabled)
         return Results.BadRequest(new { error = "Web authentication is disabled." });
@@ -94,11 +184,22 @@ app.MapPost("/api/web-auth/change-password", (WebAuthService auth, WebChangePass
     if (string.IsNullOrEmpty(req.NewPassword) || req.NewPassword != req.ConfirmPassword)
         return Results.BadRequest(new { error = "New password and confirmation must match." });
 
-    if (!auth.TryChangePassword(req.CurrentPassword ?? "", req.NewPassword, out var error))
-        return Results.Json(new { error }, statusCode: StatusCodes.Status400BadRequest);
+    var ip = WebAuthHttp.GetClientIp(ctx);
+    if (limiter.IsLockedOut(auth.Username, ip, out _))
+        return Results.Json(new { error = "Current password is incorrect." }, statusCode: StatusCodes.Status400BadRequest);
 
-    return Results.Json(new { ok = true, defaultPassword = auth.UsingDefaultPassword });
-});
+    if (!auth.TryChangePassword(req.CurrentPassword ?? "", req.NewPassword, out var error))
+    {
+        limiter.RecordFailure(auth.Username, ip);
+        Log.Warning("web-auth.change-password.failed user={User} ip={Ip}", auth.Username, ip);
+        return Results.Json(new { error }, statusCode: StatusCodes.Status400BadRequest);
+    }
+
+    limiter.RecordSuccess(auth.Username, ip);
+    Log.Information("web-auth.change-password.success user={User} ip={Ip}", auth.Username, ip);
+    auth.SignIn(ctx, auth.Username);
+    return Results.Json(new { ok = true, mustChangePassword = auth.MustChangePassword });
+}).RequireRateLimiting("login");
 
 // Apply migrations + import legacy dedup index BEFORE the login probe runs,
 // so the new DB is consistent and queryable from the first request.
@@ -178,7 +279,10 @@ app.MapPost("/api/settings/credentials", (HeadlessHost host, CredentialsRequest 
 
 app.MapPost("/api/settings/download-folder", (HeadlessHost host, FolderRequest req) =>
 {
-    host.UpdateSettings(c => { c.PathSaveFile = req.Folder; });
+    if (!PathPolicy.TryResolveDownloadFolder(req.Folder ?? "", out var resolved, out var error))
+        return Results.BadRequest(new { error });
+
+    host.UpdateSettings(c => { c.PathSaveFile = resolved; });
     return Results.Json(new { ok = true });
 });
 
@@ -271,7 +375,12 @@ app.MapPatch("/api/chats/{id:long}", (long id, HeadlessHost host, ChatPatch patc
             if (patch.Music         .HasValue) chat.Download.Music     = patch.Music.Value;
             if (patch.Files         .HasValue) chat.Download.Files     = patch.Files.Value;
             if (patch.SaveHistory   .HasValue) chat.SaveHistory        = patch.SaveHistory.Value;
-            if (patch.FolderTemplate != null)  chat.FolderTemplate     = patch.FolderTemplate;
+            if (patch.FolderTemplate != null)
+            {
+                if (!PathPolicy.IsValidFolderTemplate(patch.FolderTemplate, out var templateError))
+                    throw new InvalidOperationException(templateError);
+                chat.FolderTemplate = patch.FolderTemplate;
+            }
             if (patch.Filter        != null)   chat.IgnoreFileByRegex  =
                 patch.Filter.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
             if (patch.Plugins != null)
@@ -280,6 +389,7 @@ app.MapPatch("/api/chats/{id:long}", (long id, HeadlessHost host, ChatPatch patc
         return Results.Json(new { ok = true });
     }
     catch (KeyNotFoundException ex) { return Results.NotFound(new { error = ex.Message }); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
 
 app.MapPost("/api/chats/{id:long}/sync", (long id, HeadlessHost host, BootstrapManager mgr, BootstrapRequest? req) =>
@@ -582,6 +692,26 @@ static object ToFloodJson(FloodWaitSnapshot s) => new
     source           = s.Source,
     message          = s.Message,
 };
+
+static Task AddSecurityHeaders(HttpContext ctx, RequestDelegate next)
+{
+    ctx.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    ctx.Response.Headers["X-Frame-Options"] = "DENY";
+    ctx.Response.Headers["Referrer-Policy"] = "no-referrer";
+    ctx.Response.Headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()";
+    ctx.Response.Headers["Cross-Origin-Opener-Policy"] = "same-origin";
+    ctx.Response.Headers["Content-Security-Policy"] =
+        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'";
+
+    if (ctx.Request.IsHttps
+        || (ctx.Request.Headers.TryGetValue("X-Forwarded-Proto", out var proto)
+            && proto.ToString().Equals("https", StringComparison.OrdinalIgnoreCase)))
+    {
+        ctx.Response.Headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
+    }
+
+    return next(ctx);
+}
 
 // ─── DTOs ────────────────────────────────────────────────────────────────────
 internal record PhoneRequest(string Phone);
