@@ -158,10 +158,11 @@ change was not permitted to make:**
 
 …then switch the test step to `--collect:"XPlat Code Coverage"`.
 
-**The gate threshold is `COVERAGE_MINIMUM_LINE_PERCENT: "30"` and it is a guess.**
-The real baseline is unknown because the suite has never been measured here. On the
-first green run, read the actual number from the step summary and set the gate just
-below it. **Ratchet-only: raise it, never lower it.**
+**The gate threshold is `COVERAGE_MINIMUM_LINE_PERCENT: "25"`.** It was a 30% guess
+until the first run that produced coverage (run 41096558414, 2026-10-30), which
+measured **25.36%** on the headless suite (coverlet) and **17.03%** on the Windows
+suite (Microsoft Code Coverage). The gate checks the best single report, so it was
+set just below 25.36%. **Ratchet-only: raise it, never lower it.**
 
 ### 2.4 UI tests are deliberately excluded from the gate
 
