@@ -23,7 +23,7 @@
     </div>
     <div class="auth-body">
       <div id="web-login-error" class="error hidden"></div>
-      <div id="web-default-warn" class="warn-box">Default password <strong>changeme</strong> is active — you will be asked to change it after sign-in.</div>
+      <div id="web-default-warn" class="warn-box hidden">You must change the dashboard password before using other features.</div>
       <label>Email address <input id="web-username" type="text" autocomplete="username" placeholder="admin"></label>
       <label>Password <input id="web-password" type="password" autocomplete="current-password"></label>
       <button id="btn-web-login" class="btn-block" type="button">Sign in</button>
@@ -113,7 +113,7 @@
     <div id="test-download-panel" class="card wide hidden">
       <h3>Test download report</h3>
       <p id="test-download-summary" class="hint"></p>
-      <pre id="test-download-detail" class="log-view" style="max-height:40vh"></pre>
+      <pre id="test-download-detail" class="log-view log-view-short"></pre>
       <button id="btn-test-download-dismiss" type="button">Dismiss</button>
     </div>
     <div class="toolbar">

@@ -256,3 +256,9 @@ th { background: color-mix(in srgb, var(--surface) 92%, var(--text)); }
   header h1 { font-size: .95rem; }
   main { padding: .65rem; }
 }
+
+/* Replacements for inline style attributes blocked by the CSP (style-src 'self'). */
+.input-narrow { width: 60px; }
+.text-ok { color: #1a7f4c; }
+.text-bad { color: #a22; }
+.log-view-short { max-height: 40vh; }

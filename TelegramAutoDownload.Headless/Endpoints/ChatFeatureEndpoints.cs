@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using TelegramAutoDownload.Headless;
+using TelegramAutoDownload.Headless.Security;
 using TelegramClient.Models;
 
 namespace TelegramAutoDownload.Headless.Endpoints;
@@ -16,6 +17,16 @@ public static class ChatFeatureEndpoints
 
     static IResult PatchChatFeatures(long id, HeadlessHost host, ChatFeaturesPatch patch)
     {
+        foreach (var template in new[]
+                 {
+                     patch.SocialDownloadFolderTemplate, patch.YoutubeDownloadFolderTemplate,
+                     patch.OtherDownloadFolderTemplate, patch.TorrentDownloadFolderTemplate,
+                 })
+        {
+            if (!PathPolicy.IsValidFolderTemplate(template, out var error))
+                return Results.BadRequest(new { error });
+        }
+
         try
         {
             host.UpdateChatSettings(id, chat =>
@@ -82,7 +93,7 @@ public static class ChatFeatureEndpoints
         }
     }
 
-    /// <summary>Single call site for folder template writes — wire PathPolicy.ValidateRelativeTemplate here when available.</summary>
+    /// <summary>Templates reaching here have already passed <see cref="PathPolicy.IsValidFolderTemplate"/>.</summary>
     static string ValidateFolderTemplateWrite(string template) =>
         template.Trim();
 
