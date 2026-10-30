@@ -8,8 +8,10 @@ using Serilog;
 using TelegramAutoDownload.Headless;
 using TelegramAutoDownload.Headless.Data;
 using TelegramAutoDownload.Headless.Logging;
+using TelegramAutoDownload.Headless.Endpoints;
 using TelegramAutoDownload.Headless.Scanning;
 using TelegramAutoDownload.Models;
+using TelegramClient;
 using TelegramClient.Models;
 
 Log.Logger = new LoggerConfiguration()
@@ -33,6 +35,8 @@ builder.Services.AddSingleton<HeadlessHost>();
 builder.Services.AddSingleton<LoginCoordinator>();
 builder.Services.AddSingleton<FloodWaitTracker>();
 builder.Services.AddSingleton<ScanRateLimits>();
+builder.Services.AddSingleton<TelegramApiBudget>();
+builder.Services.AddSingleton<ITelegramApiBudget>(sp => sp.GetRequiredService<TelegramApiBudget>());
 builder.Services.AddSingleton<BootstrapManager>();
 builder.Services.AddSingleton<ChatDownloadTester>();
 builder.Services.AddSingleton<HeadlessLogReader>();
@@ -107,6 +111,12 @@ var repo = app.Services.GetRequiredService<MediaRepository>();
 await db.InitializeAsync();
 await LegacyDedupMigration.RunAsync(repo);
 Log.Information("Database ready at {Path}", HeadlessPaths.DatabaseFile);
+
+app.Lifetime.ApplicationStopping.Register(() =>
+{
+    try { FileDownloadIndex.Flush(); }
+    catch (Exception ex) { Log.Warning(ex, "Failed to flush FileDownloadIndex on shutdown"); }
+});
 
 // Probe the session in the background so a restored login is reflected immediately.
 var probe = app.Services.GetRequiredService<LoginCoordinator>();
@@ -532,6 +542,8 @@ app.MapGet("/api/status", (HeadlessHost host, LoginCoordinator login, FloodWaitT
     });
 });
 
+app.MapChatFeatureEndpoints();
+
 await app.RunAsync();
 
 static IResult TryStartBootstrap(long id, HeadlessHost host, BootstrapManager mgr, BootstrapRequest? req, bool requireMonitored)
@@ -626,7 +638,14 @@ internal record ChatDtoView(
     bool   SaveHistory,
     Dictionary<string, bool> Plugins,
     int    MembersCount,
-    bool   Muted)
+    bool   Muted,
+    string ReactionIcon,
+    string DownloadStartIcon,
+    string HistoryIcon,
+    string SocialDownloadFolderTemplate,
+    string YoutubeDownloadFolderTemplate,
+    string OtherDownloadFolderTemplate,
+    string TorrentDownloadFolderTemplate)
 {
     public static ChatDtoView From(TelegramClient.Models.ChatDto c) => new(
         c.Id, c.Name ?? "", c.Username ?? "", c.Type ?? "",
@@ -637,7 +656,14 @@ internal record ChatDtoView(
         c.FolderTemplate ?? "",
         c.SaveHistory,
         c.EnabledPlugins ?? new Dictionary<string, bool>(),
-        c.MembersCount, c.Muted);
+        c.MembersCount, c.Muted,
+        c.ReactionIcon ?? "",
+        c.DownloadStartIcon ?? "",
+        c.HistoryIcon ?? "",
+        c.SocialDownloadFolderTemplate ?? "",
+        c.YoutubeDownloadFolderTemplate ?? "",
+        c.OtherDownloadFolderTemplate ?? "",
+        c.TorrentDownloadFolderTemplate ?? "");
 }
 
 public partial class Program { }

@@ -72,7 +72,11 @@ function setTelegramAuthState(isLoggedIn, userId) {
 
 function enterApp(userId) {
   setTelegramAuthState(true, userId);
-  switchTab('chats');
+  const hashTab = location.hash.replace(/^#/, '');
+  const prefsTab = loadUiPrefs().lastTab;
+  const tab = VALID_TABS.has(hashTab) ? hashTab : (VALID_TABS.has(prefsTab) ? prefsTab : 'chats');
+  switchTab(tab, { fromHash: VALID_TABS.has(hashTab) });
+  refreshGlobalDownloadsPaused();
 }
 
 function leaveTelegramApp() {
@@ -115,9 +119,20 @@ async function initApp() {
 }
 
 // ─── Tabs ────────────────────────────────────────────────────────────────────
-function switchTab(name) {
-  $$('header nav button').forEach(x => x.classList.toggle('active', x.dataset.tab === name));
+const VALID_TABS = new Set(['chats', 'queue', 'status', 'settings', 'logs']);
+
+function switchTab(name, { fromHash = false } = {}) {
+  if (!VALID_TABS.has(name)) name = 'chats';
+  $$('header nav button').forEach(x => {
+    const on = x.dataset.tab === name;
+    x.classList.toggle('active', on);
+    x.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
   $$('#app-screen .tab').forEach(t => t.classList.toggle('active', t.id === `tab-${name}`));
+  if (!fromHash && loggedIn) {
+    location.hash = name;
+    saveUiPrefs({ lastTab: name });
+  }
   if (name === 'chats')    loadChats();
   if (name === 'queue')    refreshQueue();
   if (name === 'status')   refreshStatus();
@@ -126,6 +141,10 @@ function switchTab(name) {
 }
 
 $$('header nav button').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+window.addEventListener('hashchange', () => {
+  const tab = location.hash.replace(/^#/, '');
+  if (VALID_TABS.has(tab)) switchTab(tab, { fromHash: true });
+});
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 async function api(path, opts = {}) {
@@ -204,11 +223,12 @@ async function setDownloadsPaused(paused) {
   return res;
 }
 
-const LIMIT_THRESHOLDS = {
+let LIMIT_THRESHOLDS = {
   scannerCapacity: { max: 100, warn: 20, danger: 50 },
   scannerRefill:   { max: 50,  warn: 5,  danger: 10 },
   downloadThreads: { max: 10,  warn: 6,  danger: 8 },
 };
+let limitsDefaults = null;
 
 function limitLevel(value, t) {
   if (value >= t.max || value >= t.danger) return 'danger';
@@ -257,8 +277,12 @@ async function startBootstrap(chatId, overrideParallel = false) {
   } catch (e) {
     if (e.status === 409 && e.data?.canOverride && !overrideParallel) {
       const blocker = e.data.blockingChat || 'another chat';
-      if (confirm(`${e.message}\n\nStart anyway (one-time override)?\nParallel scans share the same rate limiter but increase ban risk.`))
-        return startBootstrap(chatId, true);
+      if (await confirmDialog({
+        title: 'Bootstrap conflict',
+        message: `${e.message}\n\nStart anyway (one-time override)? Parallel scans share the same rate limiter but increase ban risk.`,
+        confirmText: 'Start anyway',
+        danger: true,
+      })) return startBootstrap(chatId, true);
     }
     throw e;
   }
@@ -381,7 +405,7 @@ $('#btn-change-web-password').onclick = async () => {
     $('#s-pwd-current').value = '';
     $('#s-pwd-new').value = '';
     $('#s-pwd-confirm').value = '';
-    alert('Dashboard password updated.');
+    toast('Dashboard password updated.');
   }
 };
 
@@ -435,10 +459,12 @@ $('#btn-password').onclick = async () => {
 };
 
 $('#btn-logout').onclick = async () => {
-  if (!confirm(
-    'Sign out of Telegram on this server?\n\n' +
-    'Downloads and queue data are kept, but the session is removed and you will need to verify your phone again.'
-  )) return;
+  if (!await confirmDialog({
+    title: 'Sign out of Telegram',
+    message: 'Sign out of Telegram on this server?\n\nDownloads and queue data are kept, but the session is removed and you will need to verify your phone again.',
+    confirmText: 'Sign out',
+    danger: true,
+  })) return;
   await api('/api/login/logout', { method: 'POST' });
   await refreshLoginStatus();
 };
@@ -464,32 +490,70 @@ function formatLastSync(row) {
 }
 
 async function loadChats() {
-  try { allChats = await api('/api/chats'); renderChats(); }
-  catch (e) { console.warn(e); }
+  const sk = $('#chats-loading');
+  sk?.classList.remove('hidden');
+  try {
+    allChats = await api('/api/chats');
+    markLoaderOk('chats');
+    await renderChats();
+  } catch (e) {
+    markLoaderFail('chats', e);
+    toastError(e.message);
+  } finally {
+    sk?.classList.add('hidden');
+  }
 }
 
 $('#btn-refresh-chats').onclick = async () => {
   const btn = $('#btn-refresh-chats');
   btn.disabled = true; btn.textContent = '⏳ Loading…';
-  try { allChats = await api('/api/chats/refresh', { method: 'POST' }); renderChats(); }
-  catch (e) { alert(e.message); }
+  try { allChats = await api('/api/chats/refresh', { method: 'POST' }); markLoaderOk('chats'); await renderChats(); toast('Chat list refreshed from Telegram.'); }
+  catch (e) { markLoaderFail('chats', e); toastError(e.message); }
   finally { btn.disabled = false; btn.textContent = '🔄 Refresh from Telegram'; }
 };
 
-$('#chat-search').oninput = () => renderChats();
+let chatSearchTimer = null;
+$('#chat-search').oninput = () => {
+  saveUiPrefs({ chatFilter: $('#chat-search').value });
+  clearTimeout(chatSearchTimer);
+  chatSearchTimer = setTimeout(() => renderChats(), 300);
+};
 
 async function renderChats() {
-  const q = $('#chat-search').value.trim().toLowerCase();
+  if (tableHasFocusedInput('#chat-table')) return;
+  const q = ($('#chat-search').value || loadUiPrefs().chatFilter || '').trim().toLowerCase();
   try {
     queueByChat = Object.fromEntries((await api('/api/queue/stats/by-chat')).map(r => [r.chatId, r]));
-  } catch { /* queue stats optional until first bootstrap */ }
+    markLoaderOk('queueByChat');
+  } catch (e) {
+    markLoaderFail('queueByChat', e);
+  }
   const rows = allChats
     .filter(c => !q || (c.name + ' ' + c.username).toLowerCase().includes(q))
     .sort((a, b) => Number(b.selected) - Number(a.selected) || a.name.localeCompare(b.name));
   $('#chat-count').textContent = `${rows.filter(r => r.selected).length} / ${allChats.length} monitored`;
+  $('#chats-empty')?.classList.toggle('hidden', rows.length > 0);
   const tbody = $('#chat-table tbody');
   tbody.innerHTML = '';
   rows.forEach(c => tbody.appendChild(chatRow(c)));
+}
+
+async function startHistoryJob(chatId, selected) {
+  if (selected) {
+    return api(`/api/chats/${chatId}/sync`, { method: 'POST', body: JSON.stringify({ overrideParallel: false }) });
+  }
+  return startBootstrap(chatId);
+}
+
+function revertChatControl(t, c) {
+  if (t.dataset.k) {
+    const k = t.dataset.k;
+    if (t.type === 'checkbox') t.checked = !!c[k];
+    else if (t.type === 'number') t.value = c.downloadFromSize;
+    else t.value = c[k] ?? '';
+  } else if (t.dataset.p) {
+    t.checked = !!(c.plugins && c.plugins[t.dataset.p]);
+  }
 }
 
 function chatRow(c) {
@@ -497,70 +561,165 @@ function chatRow(c) {
   if (c.selected) tr.classList.add('selected');
   const sync = formatLastSync(queueByChat[c.id]);
   tr.innerHTML = `
-    <td><input type="checkbox" data-k="selected" ${c.selected ? 'checked' : ''}></td>
-    <td>${escape(c.name)}<br><small class="muted">${escape(c.username || '')}</small></td>
-    <td>${escape(c.type)}</td>
-    <td>${c.membersCount || ''}</td>
-    <td><input type="number" data-k="downloadFromSize" value="${c.downloadFromSize}" min="0" style="width:60px"></td>
-    <td>
-      <input type="checkbox" data-k="videos" ${c.videos ? 'checked' : ''} title="Videos">
-      <input type="checkbox" data-k="photos" ${c.photos ? 'checked' : ''} title="Photos">
-      <input type="checkbox" data-k="music"  ${c.music  ? 'checked' : ''} title="Music">
-      <input type="checkbox" data-k="files"  ${c.files  ? 'checked' : ''} title="Files">
+    <td data-col="monitor"><input type="checkbox" data-k="selected" aria-label="Monitor ${escape(c.name)}" ${c.selected ? 'checked' : ''}></td>
+    <td data-col="name">${escape(c.name)}<br><small class="muted">${escape(c.username || '')}</small>${c.muted ? '<br><small class="muted">Telegram muted</small>' : ''}</td>
+    <td data-col="type">${escape(c.type)}</td>
+    <td data-col="members">${c.membersCount || ''}</td>
+    <td data-col="minmb"><input type="number" data-k="downloadFromSize" aria-label="Min MB for ${escape(c.name)}" value="${c.downloadFromSize}" min="0" style="width:60px"></td>
+    <td data-col="media" class="media-checks">
+      <label><input type="checkbox" data-k="videos" ${c.videos ? 'checked' : ''}> Vid</label>
+      <label><input type="checkbox" data-k="photos" ${c.photos ? 'checked' : ''}> Photo</label>
+      <label><input type="checkbox" data-k="music" ${c.music ? 'checked' : ''}> Music</label>
+      <label><input type="checkbox" data-k="files" ${c.files ? 'checked' : ''}> File</label>
     </td>
-    <td>
-      <input type="checkbox" data-p="YouTube"     ${c.plugins?.YouTube     ? 'checked' : ''} title="YouTube">
-      <input type="checkbox" data-p="SocialMedia" ${c.plugins?.SocialMedia ? 'checked' : ''} title="SocialMedia">
-      <input type="checkbox" data-p="Other"       ${c.plugins?.Other       ? 'checked' : ''} title="Direct">
-      <input type="checkbox" data-p="Torrent"     ${c.plugins?.Torrent     ? 'checked' : ''} title="Torrent">
+    <td data-col="plugins" class="plugin-checks">
+      <label><input type="checkbox" data-p="YouTube" ${c.plugins?.YouTube ? 'checked' : ''}> YT</label>
+      <label><input type="checkbox" data-p="SocialMedia" ${c.plugins?.SocialMedia ? 'checked' : ''}> Soc</label>
+      <label><input type="checkbox" data-p="Other" ${c.plugins?.Other ? 'checked' : ''}> Dir</label>
+      <label><input type="checkbox" data-p="Torrent" ${c.plugins?.Torrent ? 'checked' : ''}> Tor</label>
     </td>
-    <td><input type="text" data-k="filter" value="${escape(c.filter || '')}" placeholder="regex; pattern"></td>
-    <td><input type="text" data-k="folderTemplate" value="${escape(c.folderTemplate || '')}" placeholder="{Type}/{ChatName}"></td>
-    <td><input type="checkbox" data-k="saveHistory" ${c.saveHistory ? 'checked' : ''}></td>
-    <td class="${sync.stale ? 'sync-stale' : 'sync-ok'}" title="${escape(sync.title)}">${escape(sync.text)}</td>
-    <td><button data-act="bootstrap" title="Scan history for new media since last sync">⬇ Bootstrap</button></td>
-    <td><button data-act="test-download" title="Download newest 10 media as probe">🧪 Test 10</button></td>
+    <td data-col="filter"><input type="text" data-k="filter" value="${escape(c.filter || '')}" placeholder="regex; pattern"></td>
+    <td data-col="folder">
+      <input type="text" data-k="folderTemplate" value="${escape(c.folderTemplate || '')}" placeholder="{Type}/{ChatName}">
+      <details class="provider-folders">
+        <summary>Per-provider folders</summary>
+        <label>Social <input type="text" data-f="socialDownloadFolderTemplate" value="${escape(c.socialDownloadFolderTemplate || '')}"></label>
+        <label>YouTube <input type="text" data-f="youtubeDownloadFolderTemplate" value="${escape(c.youtubeDownloadFolderTemplate || '')}"></label>
+        <label>Direct <input type="text" data-f="otherDownloadFolderTemplate" value="${escape(c.otherDownloadFolderTemplate || '')}"></label>
+        <label>Torrent <input type="text" data-f="torrentDownloadFolderTemplate" value="${escape(c.torrentDownloadFolderTemplate || '')}"></label>
+      </details>
+    </td>
+    <td data-col="mute"><input type="checkbox" data-mute ${c.muted ? 'checked' : ''} aria-label="Mute ${escape(c.name)} on Telegram"></td>
+    <td data-col="reactions" class="reaction-inputs">
+      <input type="text" data-r="reactionIcon" value="${escape(c.reactionIcon || '')}" placeholder="Done" title="Reaction when download completes">
+      <input type="text" data-r="downloadStartIcon" value="${escape(c.downloadStartIcon || '')}" placeholder="Start" title="Reaction when download starts">
+      <input type="text" data-r="historyIcon" value="${escape(c.historyIcon || '')}" placeholder="History" title="Reaction when history saved">
+      <button type="button" data-act="load-reactions" class="inline">Load emoji</button>
+    </td>
+    <td data-col="history"><input type="checkbox" data-k="saveHistory" aria-label="Save history for ${escape(c.name)}" ${c.saveHistory ? 'checked' : ''}></td>
+    <td data-col="sync" class="${sync.stale ? 'sync-stale' : 'sync-ok'}" title="${escape(sync.title)}" data-bootstrap-status>${escape(sync.text)}</td>
+    <td data-col="bootstrap"><button data-act="bootstrap" title="Scan history for new media since last sync">${c.selected ? '⬇ Sync' : '⬇ Bootstrap'}</button></td>
+    <td data-col="test"><button data-act="test-download" title="Download newest 10 media as probe">🧪 Test 10</button></td>
   `;
 
-  const patch = {};
   tr.addEventListener('change', async (e) => {
     const t = e.target;
-    if (t.dataset.k) {
-      patch[t.dataset.k] = t.type === 'checkbox' ? t.checked
-                          : t.type === 'number' ? Number(t.value)
-                          : t.value;
-    } else if (t.dataset.p) {
-      patch.plugins = { ...(patch.plugins || c.plugins || {}), [t.dataset.p]: t.checked };
+    if (t.dataset.mute !== undefined) {
+      const want = t.checked;
+      const prev = !!c.muted;
+      try {
+        await api(`/api/chats/${c.id}/mute`, { method: 'POST', body: JSON.stringify({ muted: want }) });
+        c.muted = want;
+        toast(want ? 'Chat muted on Telegram.' : 'Chat unmuted on Telegram.');
+      } catch (err) {
+        t.checked = prev;
+        toastError(err.message);
+      }
+      return;
     }
-    try { await api(`/api/chats/${c.id}`, { method: 'PATCH', body: JSON.stringify(patch) }); }
-    catch (err) { alert(err.message); return; }
-    Object.assign(c, patch);
-    if ('selected' in patch) tr.classList.toggle('selected', patch.selected);
+    if (!t.dataset.k && !t.dataset.p) return;
+    let body = {};
+    if (t.dataset.k) {
+      const k = t.dataset.k;
+      body[k] = t.type === 'checkbox' ? t.checked : t.type === 'number' ? Number(t.value) : t.value;
+    } else {
+      body.plugins = { ...(c.plugins || {}), [t.dataset.p]: t.checked };
+    }
+    try {
+      await api(`/api/chats/${c.id}`, { method: 'PATCH', body: JSON.stringify(body) });
+      if (t.dataset.k) c[t.dataset.k] = body[t.dataset.k];
+      else c.plugins = body.plugins;
+      if ('selected' in body) tr.classList.toggle('selected', body.selected);
+    } catch (err) {
+      revertChatControl(t, c);
+      toastError(err.message);
+    }
+  });
+
+  tr.querySelectorAll('input[data-f]').forEach(inp => {
+    inp.addEventListener('change', async () => {
+      const key = inp.dataset.f;
+      const prev = c[key] || '';
+      const apiBody = {
+        socialDownloadFolderTemplate: inp.dataset.f === 'socialDownloadFolderTemplate' ? inp.value : undefined,
+        youtubeDownloadFolderTemplate: inp.dataset.f === 'youtubeDownloadFolderTemplate' ? inp.value : undefined,
+        otherDownloadFolderTemplate: inp.dataset.f === 'otherDownloadFolderTemplate' ? inp.value : undefined,
+        torrentDownloadFolderTemplate: inp.dataset.f === 'torrentDownloadFolderTemplate' ? inp.value : undefined,
+      };
+      Object.keys(apiBody).forEach(k => { if (apiBody[k] === undefined) delete apiBody[k]; });
+      try {
+        await api(`/api/chats/${c.id}/features`, { method: 'PATCH', body: JSON.stringify(apiBody) });
+        c[key] = inp.value;
+      } catch (err) {
+        inp.value = prev;
+        toastError(err.message);
+      }
+    });
+  });
+
+  tr.querySelectorAll('input[data-r]').forEach(inp => {
+    inp.addEventListener('change', async () => {
+      const key = inp.dataset.r;
+      const prev = c[key] || '';
+      const body = { [key]: inp.value };
+      try {
+        await api(`/api/chats/${c.id}/features`, { method: 'PATCH', body: JSON.stringify(body) });
+        c[key] = inp.value;
+      } catch (err) {
+        inp.value = prev;
+        toastError(err.message);
+      }
+    });
+  });
+
+  tr.querySelector('[data-act="load-reactions"]')?.addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    try {
+      const res = await api(`/api/chats/${c.id}/reactions`);
+      if (!res.reactions?.length) { toast('No reactions available for this chat.'); return; }
+      toast(`Available: ${res.reactions.slice(0, 12).join(' ')}${res.reactions.length > 12 ? '…' : ''}`);
+    } catch (err) { toastError(err.message); }
+    finally { e.target.disabled = false; }
   });
 
   tr.querySelector('[data-act="bootstrap"]').onclick = async (e) => {
-    if (!confirm(`Bootstrap "${c.name}"?\n\nScans Telegram history (newest first), queues new media in the database, then downloads gradually.\n\nRun again anytime to pick up posts added since the last sync. Monitor (☑) captures live new messages between bootstraps.`)) return;
+    const label = c.selected ? 'Sync' : 'Bootstrap';
+    if (!await confirmDialog({ title: `${label} history`, message: `${label} "${c.name}"?\n\nScans Telegram history (newest first), queues new media, then downloads gradually. Monitor captures live messages between scans.` }))
+      return;
     e.target.disabled = true; e.target.textContent = '…';
     try {
-      const res = await startBootstrap(c.id);
-      alert(res.message || 'Bootstrap started — watch the Queue tab.');
-    }
-    catch (err) { alert(err.message); }
-    finally { e.target.disabled = false; e.target.textContent = '⬇ Bootstrap'; }
+      const res = await startHistoryJob(c.id, c.selected);
+      toast(res.message || `${label} started — watch the Queue tab.`);
+      refreshBootstrapStatusCell(tr, c.id);
+    } catch (err) { toastError(err.message); }
+    finally { e.target.disabled = false; e.target.textContent = c.selected ? '⬇ Sync' : '⬇ Bootstrap'; }
   };
 
   tr.querySelector('[data-act="test-download"]').onclick = async (e) => {
-    if (!confirm(`Test download for "${c.name}"?\n\nFinds the newest 10 media messages, validates settings, and attempts a real download for each.\n\nNothing is written to the queue database. Check Logs tab for [TestDownload] lines.`))
+    if (!await confirmDialog({ title: 'Test download', message: `Test download for "${c.name}"?\n\nFinds the newest 10 media messages and attempts a real download for each. Nothing is written to the queue database.` }))
       return;
     e.target.disabled = true; e.target.textContent = '…';
     try {
       const report = await api(`/api/chats/${c.id}/test-download?limit=10`, { method: 'POST' });
       showTestDownloadReport(report);
-    } catch (err) { alert(err.message); }
+    } catch (err) { toastError(err.message); }
     finally { e.target.disabled = false; e.target.textContent = '🧪 Test 10'; }
   };
 
+  refreshBootstrapStatusCell(tr, c.id);
   return tr;
+}
+
+async function refreshBootstrapStatusCell(tr, chatId) {
+  const cell = tr.querySelector('[data-bootstrap-status]');
+  if (!cell) return;
+  try {
+    const job = await api(`/api/chats/${chatId}/bootstrap`);
+    if (job && !job.done) {
+      cell.textContent = `${job.status} · ${job.discovered}/${job.inserted}`;
+      cell.classList.add('sync-stale');
+    }
+  } catch { /* no active job */ }
 }
 
 function showTestDownloadReport(report) {
@@ -620,17 +779,17 @@ async function retryAllFailed(chatId = null) {
         'failed')
     : statusCount(stats.byStatus, 'failed');
   if (!count) {
-    alert('No failed items to retry.');
+    toast('No failed items to retry.');
     return;
   }
   const scope = chatId ? `"${chatName(chatId)}"` : 'all chats';
-  if (!confirm(`Re-queue ${count} failed item(s) for ${scope}?\n\nThe download orchestrator will pick them up automatically.`))
+  if (!await confirmDialog({ message: `Re-queue ${count} failed item(s) for ${scope}?\n\nThe download orchestrator will pick them up automatically.` }))
     return;
   const url = chatId
     ? `/api/queue/retry-failed?chatId=${chatId}`
     : '/api/queue/retry-failed';
   const res = await api(url, { method: 'POST' });
-  alert(`Re-queued ${res.requeued} item(s).`);
+  toast(`Re-queued ${res.requeued} item(s).`);
   refreshQueue();
 }
 
@@ -642,17 +801,17 @@ async function retryAllSkipped(chatId = null) {
         'skipped')
     : statusCount(stats.byStatus, 'skipped');
   if (!count) {
-    alert('No skipped items to retry.');
+    toast('No skipped items to retry.');
     return;
   }
   const scope = chatId ? `"${chatName(chatId)}"` : 'all chats';
-  if (!confirm(`Re-queue ${count} skipped item(s) for ${scope}?\n\nItems may skip again if they are duplicates, stickers/voice, or blocked by filters (V/P/M/F, Min MB, regex).`))
+  if (!await confirmDialog({ message: `Re-queue ${count} skipped item(s) for ${scope}?\n\nItems may skip again if they are duplicates, stickers/voice, or blocked by filters (V/P/M/F, Min MB, regex).` }))
     return;
   const url = chatId
     ? `/api/queue/retry-skipped?chatId=${chatId}`
     : '/api/queue/retry-skipped';
   const res = await api(url, { method: 'POST' });
-  alert(`Re-queued ${res.requeued} item(s).`);
+  toast(`Re-queued ${res.requeued} item(s).`);
   refreshQueue();
 }
 
@@ -664,17 +823,17 @@ async function deleteAllFailed(chatId = null) {
         'failed')
     : statusCount(stats.byStatus, 'failed');
   if (!count) {
-    alert('No failed items to delete.');
+    toast('No failed items to delete.');
     return;
   }
   const scope = chatId ? `"${chatName(chatId)}"` : 'all chats';
-  if (!confirm(`Permanently delete ${count} failed record(s) for ${scope}?\n\nThis removes them from the queue database only — files already on disk are not deleted.`))
+  if (!await confirmDialog({ message: `Permanently delete ${count} failed record(s) for ${scope}?\n\nThis removes them from the queue database only — files already on disk are not deleted.`, confirmText: 'Delete', danger: true }))
     return;
   const url = chatId
     ? `/api/queue/delete-failed?chatId=${chatId}`
     : '/api/queue/delete-failed';
   const res = await api(url, { method: 'POST' });
-  alert(`Deleted ${res.deleted} failed record(s).`);
+  toast(`Deleted ${res.deleted} failed record(s).`);
   refreshQueue();
 }
 
@@ -683,13 +842,13 @@ async function clearChatQueue(chatId) {
   const stats = (await api('/api/queue/stats/by-chat')).find(r => r.chatId === chatId);
   const total = stats?.total ?? 0;
   if (!total) {
-    alert(`No queue records for "${name}".`);
+    toast(`No queue records for "${name}".`);
     return;
   }
-  if (!confirm(`Clear all ${total} queue record(s) for "${name}"?\n\nThis removes pending/queued/done/failed rows from the database. Downloaded files on disk are NOT deleted. Bootstrap history watermark is reset.`))
+  if (!await confirmDialog({ message: `Clear all ${total} queue record(s) for "${name}"?\n\nThis removes pending/queued/done/failed rows from the database. Downloaded files on disk are NOT deleted. Bootstrap history watermark is reset.`, confirmText: 'Clear queue', danger: true }))
     return;
   const res = await api(`/api/queue/clear?chatId=${chatId}`, { method: 'POST' });
-  alert(`Cleared ${res.deleted} record(s) for "${name}".`);
+  toast(`Cleared ${res.deleted} record(s) for "${name}".`);
   refreshQueue();
 }
 
@@ -697,9 +856,9 @@ async function clearChatQueue(chatId) {
 async function refreshQueue() {
   try {
     if (!allChats.length) {
-      try { allChats = await api('/api/chats'); } catch {}
+      try { allChats = await api('/api/chats'); markLoaderOk('chats'); } catch (e) { markLoaderFail('chats', e); }
     }
-    const [stats, byChat, jobs, limits, failed, skipped, flood] = await Promise.all([
+    const [stats, byChat, jobs, limits, failed, skipped, flood, dlState] = await Promise.all([
       api('/api/queue/stats'),
       api('/api/queue/stats/by-chat'),
       api('/api/bootstrap/jobs'),
@@ -707,33 +866,38 @@ async function refreshQueue() {
       api('/api/queue/items?status=failed&limit=50'),
       api('/api/queue/items?status=skipped&limit=100'),
       api('/api/flood-wait'),
+      api('/api/queue/downloads'),
     ]);
 
     queueByChat = Object.fromEntries(byChat.map(r => [r.chatId, r]));
+    markLoaderOk('queue');
 
     renderFloodBanner(flood);
-    if (limits.thresholds) {
-      LIMIT_THRESHOLDS.scannerCapacity = limits.thresholds.scannerCapacity;
-      LIMIT_THRESHOLDS.scannerRefill   = limits.thresholds.scannerRefill;
-      LIMIT_THRESHOLDS.downloadThreads = limits.thresholds.downloadThreads;
-    }
+    if (limits.thresholds) LIMIT_THRESHOLDS = { ...limits.thresholds };
+    if (limits.defaults) limitsDefaults = limits.defaults;
 
     renderQueueCards(stats);
-    renderBootstrapJobs(jobs);
-    renderQueueByChat(byChat);
-    renderSkippedItems(skipped);
-    renderFailedItems(failed);
+    if (!tableHasFocusedInput('#bootstrap-table')) renderBootstrapJobs(jobs);
+    if (!tableHasFocusedInput('#queue-chat-table')) renderQueueByChat(byChat);
+    if (!tableHasFocusedInput('#skipped-table')) renderSkippedItems(skipped);
+    if (!tableHasFocusedInput('#failed-table')) renderFailedItems(failed);
 
-    $('#q-capacity').value = limits.scannerApiCapacity ?? 5;
-    $('#q-refill').value   = limits.scannerApiRefillPerSecond ?? 1;
-    $('#q-threads').value  = limits.downloadThreads ?? 3;
+    if (!tableHasFocusedInput('.limits-grid')) {
+      $('#q-capacity').value = limits.scannerApiCapacity ?? 5;
+      $('#q-refill').value   = limits.scannerApiRefillPerSecond ?? 1;
+      $('#q-threads').value  = limits.downloadThreads ?? 3;
+    }
     applyLimitWarnings(
       Number($('#q-capacity').value),
       Number($('#q-refill').value),
       Number($('#q-threads').value));
     applyParallelBootstrapUi(limits);
     applyDownloadsPausedUi(!!limits.downloadsPaused);
-  } catch (e) { console.warn(e); }
+    applyGlobalDownloadsPaused(!!dlState.paused, 0);
+  } catch (e) {
+    markLoaderFail('queue', e);
+    toastError(e.message);
+  }
 }
 
 ['#q-capacity', '#q-refill', '#q-threads'].forEach(sel => {
@@ -783,7 +947,7 @@ function renderBootstrapJobs(jobs) {
     tr.querySelector('[data-act="cancel"]')?.addEventListener('click', async (e) => {
       e.target.disabled = true;
       try { await api(`/api/chats/${j.chatId}/bootstrap`, { method: 'DELETE' }); refreshQueue(); }
-      catch (err) { alert(err.message); e.target.disabled = false; }
+      catch (err) { toastError(err.message); e.target.disabled = false; }
     });
     body.appendChild(tr);
   });
@@ -821,25 +985,25 @@ function renderQueueByChat(rows) {
     tr.querySelector('[data-act="bootstrap"]').onclick = async (e) => {
       e.target.disabled = true; e.target.textContent = '…';
       try { await startBootstrap(r.chatId); refreshQueue(); }
-      catch (err) { alert(err.message); }
+      catch (err) { toastError(err.message); }
       finally { e.target.disabled = false; e.target.textContent = 'Bootstrap'; }
     };
     tr.querySelector('[data-act="clear-queue"]')?.addEventListener('click', async (e) => {
       e.target.disabled = true;
       try { await clearChatQueue(r.chatId); }
-      catch (err) { alert(err.message); }
+      catch (err) { toastError(err.message); }
       finally { e.target.disabled = false; }
     });
     tr.querySelector('[data-act="retry-failed"]')?.addEventListener('click', async (e) => {
       e.target.disabled = true;
       try { await retryAllFailed(r.chatId); }
-      catch (err) { alert(err.message); }
+      catch (err) { toastError(err.message); }
       finally { e.target.disabled = false; }
     });
     tr.querySelector('[data-act="retry-skipped"]')?.addEventListener('click', async (e) => {
       e.target.disabled = true;
       try { await retryAllSkipped(r.chatId); }
-      catch (err) { alert(err.message); }
+      catch (err) { toastError(err.message); }
       finally { e.target.disabled = false; }
     });
     body.appendChild(tr);
@@ -869,7 +1033,7 @@ function renderSkippedItems(items) {
       try {
         await api(`/api/queue/${it.chatId}/${it.messageId}/retry`, { method: 'POST' });
         refreshQueue();
-      } catch (err) { alert(err.message); e.target.disabled = false; }
+      } catch (err) { toastError(err.message); e.target.disabled = false; }
     };
     body.appendChild(tr);
   });
@@ -898,7 +1062,7 @@ function renderFailedItems(items) {
       try {
         await api(`/api/queue/${it.chatId}/${it.messageId}/retry`, { method: 'POST' });
         refreshQueue();
-      } catch (err) { alert(err.message); e.target.disabled = false; }
+      } catch (err) { toastError(err.message); e.target.disabled = false; }
     };
     body.appendChild(tr);
   });
@@ -911,7 +1075,18 @@ $('#btn-save-limits').onclick = async () => {
   applyLimitWarnings(capacity, refill, threads);
   const danger = limitLevel(capacity, LIMIT_THRESHOLDS.scannerCapacity) === 'danger'
     || limitLevel(refill, LIMIT_THRESHOLDS.scannerRefill) === 'danger';
-  if (danger && !confirm('These scanner settings are at or near maximum and may trigger Telegram rate limits or account restrictions. Save anyway?')) return;
+  if (danger && !await confirmDialog({ message: 'These scanner settings are at or near maximum and may trigger Telegram rate limits or account restrictions. Save anyway?', danger: true }))
+    return;
+  const wantParallel = $('#q-parallel').checked;
+  if (wantParallel && !await confirmDialog({
+    title: 'Enable parallel bootstrap',
+    message: 'Parallel bootstrap runs multiple history scans at once (shared rate limit). Enable it?',
+    confirmText: 'Enable parallel',
+    danger: true,
+  })) {
+    $('#q-parallel').checked = false;
+    $('#lbl-max-parallel').classList.add('hidden');
+  }
   try {
     await api('/api/settings/limits', {
       method: 'POST',
@@ -923,23 +1098,9 @@ $('#btn-save-limits').onclick = async () => {
         maxParallelBootstraps: Number($('#q-max-parallel').value) || 3,
       }),
     });
-    if ($('#q-parallel').checked && !confirm('Parallel bootstrap is now enabled. Multiple history scans can run at once (shared rate limit). Keep this on?')) {
-      await api('/api/settings/limits', {
-        method: 'POST',
-        body: JSON.stringify({
-          scannerApiCapacity: capacity,
-          scannerApiRefillPerSecond: refill,
-          downloadThreads: threads,
-          allowParallelBootstrap: false,
-          maxParallelBootstraps: Number($('#q-max-parallel').value) || 3,
-        }),
-      });
-      $('#q-parallel').checked = false;
-      $('#lbl-max-parallel').classList.add('hidden');
-    }
-    alert('Limits saved — active scans pick them up immediately.');
+    toast('Limits saved — active scans pick them up immediately.');
     refreshQueue();
-  } catch (e) { alert(e.message); }
+  } catch (e) { toastError(e.message); }
 };
 
 $('#btn-refresh-failed').onclick = () => refreshQueue();
@@ -948,33 +1109,33 @@ $('#btn-retry-all-skipped').onclick = async () => {
   const btn = $('#btn-retry-all-skipped');
   btn.disabled = true;
   try { await retryAllSkipped(); }
-  catch (err) { alert(err.message); }
+  catch (err) { toastError(err.message); }
   finally { btn.disabled = false; }
 };
 $('#btn-retry-all-failed').onclick = async () => {
   const btn = $('#btn-retry-all-failed');
   btn.disabled = true;
   try { await retryAllFailed(); }
-  catch (err) { alert(err.message); }
+  catch (err) { toastError(err.message); }
   finally { btn.disabled = false; }
 };
 $('#btn-delete-all-failed').onclick = async () => {
   const btn = $('#btn-delete-all-failed');
   btn.disabled = true;
   try { await deleteAllFailed(); }
-  catch (err) { alert(err.message); }
+  catch (err) { toastError(err.message); }
   finally { btn.disabled = false; }
 };
 $('#btn-toggle-downloads').onclick = async () => {
   const btn = $('#btn-toggle-downloads');
   const paused = btn.textContent.startsWith('Pause');
-  if (paused && !confirm('Pause downloads?\n\nQueued items stay in the database. In-progress items move back to queued.'))
+  if (paused && !await confirmDialog({ message: 'Pause downloads?\n\nQueued items stay in the database. In-progress items move back to queued.' }))
     return;
   btn.disabled = true;
   try {
     await setDownloadsPaused(paused);
     refreshQueue();
-  } catch (err) { alert(err.message); }
+  } catch (err) { toastError(err.message); }
   finally { btn.disabled = false; }
 };
 
@@ -982,12 +1143,24 @@ $('#btn-toggle-downloads').onclick = async () => {
 async function refreshStatus() {
   try {
     const [s, downloads] = await Promise.all([api('/api/status'), api('/api/downloads')]);
+    markLoaderOk('status');
     $('#m-monitored').textContent = `${s.monitoredChats} / ${s.totalChats}`;
-    $('#m-active'   ).textContent = s.activeDownloads;
-    $('#m-folder'   ).textContent = s.downloadFolder || '—';
+    $('#m-active').textContent = s.activeDownloads;
+    $('#m-folder').textContent = s.downloadFolder || '—';
+    $('#m-downloads-state').textContent = s.downloadsPaused ? 'Paused' : 'Running';
+    if (s.floodWait?.active) {
+      $('#m-flood').textContent = `~${s.floodWait.remainingSeconds}s`;
+    } else {
+      $('#m-flood').textContent = 'Clear';
+    }
+    applyGlobalDownloadsPaused(!!s.downloadsPaused, 0);
+    renderFloodBanner(s.floodWait);
+    if (tableHasFocusedInput('#dl-table')) return;
     const body = $('#dl-table tbody');
     body.innerHTML = '';
+    $('#dl-empty')?.classList.toggle('hidden', downloads.length > 0);
     downloads.forEach(d => {
+      const st = fmtStaleness(d.at);
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${escape(d.chat)}</td>
@@ -996,37 +1169,76 @@ async function refreshStatus() {
         <td><span class="pill ${d.status.toLowerCase()}">${d.status}</span></td>
         <td><span class="bar"><span style="width:${d.percent}%"></span></span> ${d.percent}%</td>
         <td>${fmtBytes(d.bytesDone)} / ${fmtBytes(d.bytesTotal)}</td>
+        <td class="${st.stale ? 'sync-stale' : ''}" title="${escape(st.title || '')}">${escape(st.text)}</td>
         <td class="error-cell">${escape(d.error || '')}</td>`;
       body.appendChild(tr);
     });
-  } catch (e) { console.warn(e); }
+  } catch (e) {
+    markLoaderFail('status', e);
+    toastError(e.message);
+  }
 }
 
 // ─── Settings ───────────────────────────────────────────────────────────────
 async function loadSettings() {
   try {
     const [s, ws] = await Promise.all([api('/api/settings'), api('/api/web-auth/status')]);
+    markLoaderOk('settings');
     applyDefaultPasswordUi(!!ws.defaultPassword);
     $('#s-folder').value = s.downloadFolder || '';
     if ($('#s-folder-layout')) $('#s-folder-layout').value = s.folderLayout || 'TypeFirst';
     $('#s-threads').value = s.downloadThreads || 3;
     applySettingsThreadWarning(Number($('#s-threads').value));
-  } catch (e) { console.warn(e); }
+    const p = loadUiPrefs();
+    if ($('#ui-theme')) $('#ui-theme').value = p.theme || 'system';
+    if ($('#ui-accent') && p.accent) $('#ui-accent').value = p.accent;
+    if ($('#ui-density')) $('#ui-density').value = p.density || 'comfortable';
+  } catch (e) {
+    markLoaderFail('settings', e);
+    toastError(e.message);
+  }
 }
+
+$('#btn-save-appearance')?.addEventListener('click', () => {
+  const patch = {
+    theme: $('#ui-theme')?.value || 'system',
+    accent: $('#ui-accent')?.value || '#2563eb',
+    density: $('#ui-density')?.value || 'comfortable',
+  };
+  saveUiPrefs(patch);
+  applyThemeFromPrefs();
+  toast('Appearance saved on this device.');
+});
+
+$('#btn-reset-limits')?.addEventListener('click', async () => {
+  if (!limitsDefaults) {
+    try {
+      const limits = await api('/api/settings/limits');
+      limitsDefaults = limits.defaults;
+      if (limits.thresholds) LIMIT_THRESHOLDS = { ...limits.thresholds };
+    } catch (e) { toastError(e.message); return; }
+  }
+  if (!limitsDefaults) { toast('Defaults not loaded yet — open Queue tab first.'); return; }
+  $('#q-capacity').value = limitsDefaults.scannerApiCapacity;
+  $('#q-refill').value = limitsDefaults.scannerApiRefillPerSecond;
+  $('#q-threads').value = limitsDefaults.downloadThreads;
+  applyLimitWarnings(Number($('#q-capacity').value), Number($('#q-refill').value), Number($('#q-threads').value));
+  toast('Limits reset to server defaults — click Save limits to apply.');
+});
 $('#s-threads')?.addEventListener('input', () => applySettingsThreadWarning(Number($('#s-threads').value)));
 $('#btn-save-folder').onclick = async () => {
-  try { await api('/api/settings/download-folder', { method: 'POST', body: JSON.stringify({ folder: $('#s-folder').value }) }); alert('Saved.'); }
-  catch (e) { alert(e.message); }
+  try { await api('/api/settings/download-folder', { method: 'POST', body: JSON.stringify({ folder: $('#s-folder').value }) }); toast('Saved.'); }
+  catch (e) { toastError(e.message); }
 };
 $('#btn-save-folder-layout')?.addEventListener('click', async () => {
   try {
     await api('/api/settings/folder-layout', { method: 'POST', body: JSON.stringify({ layout: $('#s-folder-layout').value }) });
-    alert('Folder layout saved. New downloads use the selected structure.');
-  } catch (e) { alert(e.message); }
+    toast('Folder layout saved. New downloads use the selected structure.');
+  } catch (e) { toastError(e.message); }
 });
 $('#btn-save-threads').onclick = async () => {
-  try { await api('/api/settings/threads', { method: 'POST', body: JSON.stringify({ threads: Number($('#s-threads').value) }) }); alert('Saved.'); }
-  catch (e) { alert(e.message); }
+  try { await api('/api/settings/threads', { method: 'POST', body: JSON.stringify({ threads: Number($('#s-threads').value) }) }); toast('Saved.'); }
+  catch (e) { toastError(e.message); }
 };
 
 // ─── Poller ─────────────────────────────────────────────────────────────────
@@ -1038,13 +1250,19 @@ async function poll() {
     $('#conn').className = ls.loggedIn ? 'ok' : 'bad';
     if (ls.loggedIn && !loggedIn) await refreshLoginStatus();
     else if (!ls.loggedIn && loggedIn) await refreshLoginStatus();
-    if (loggedIn && $('#tab-status').classList.contains('active')) refreshStatus();
-    if (loggedIn && $('#tab-queue').classList.contains('active')) refreshQueue();
-  } catch { if ($('#conn')) $('#conn').className = 'bad'; }
+    if (loggedIn) await refreshGlobalDownloadsPaused();
+    if (loggedIn && $('#tab-status').classList.contains('active')) await refreshStatus();
+    if (loggedIn && $('#tab-queue').classList.contains('active')) await refreshQueue();
+  } catch {
+    if ($('#conn')) $('#conn').className = 'bad';
+    throw new Error('Poll failed');
+  }
 }
 
 initApp();
-setInterval(poll, 2500);
+schedulePoll(poll);
+const _chatFilterPref = loadUiPrefs().chatFilter;
+if (_chatFilterPref && $('#chat-search')) $('#chat-search').value = _chatFilterPref;
 
 // ─── Logs (tail + SSE, client ring buffer) ───────────────────────────────────
 const LOG_BUFFER_MAX = 5000;
@@ -1129,7 +1347,7 @@ async function refreshLogTail() {
 async function searchLogs() {
   const file = $('#log-file').value;
   const q = $('#log-filter').value.trim();
-  if (!q) { alert('Enter filter text to search the full file (server-side scan).'); return; }
+  if (!q) { toast('Enter filter text to search the full file (server-side scan).'); return; }
   stopLogStream();
   logSearchMode = true;
   $('#log-meta').textContent = 'Searching…';
@@ -1143,14 +1361,19 @@ async function openLogsTab() {
   try {
     await loadLogFiles();
     await refreshLogTail();
-  } catch (e) { console.warn(e); $('#log-meta').textContent = e.message; }
+    markLoaderOk('logs');
+  } catch (e) {
+    markLoaderFail('logs', e);
+    toastError(e.message);
+    if ($('#log-meta')) $('#log-meta').textContent = e.message;
+  }
 }
 
-$('#btn-log-refresh').onclick = () => refreshLogTail().catch(e => alert(e.message));
-$('#btn-log-search').onclick = () => searchLogs().catch(e => alert(e.message));
-$('#log-file').onchange = () => refreshLogTail().catch(e => alert(e.message));
-$('#log-level').onchange = () => refreshLogTail().catch(e => alert(e.message));
-$('#log-filter').onkeydown = (e) => { if (e.key === 'Enter') refreshLogTail().catch(er => alert(er.message)); };
+$('#btn-log-refresh').onclick = () => refreshLogTail().catch(e => toastError(e.message));
+$('#btn-log-search').onclick = () => searchLogs().catch(e => toastError(e.message));
+$('#log-file').onchange = () => refreshLogTail().catch(e => toastError(e.message));
+$('#log-level').onchange = () => refreshLogTail().catch(e => toastError(e.message));
+$('#log-filter').onkeydown = (e) => { if (e.key === 'Enter') refreshLogTail().catch(er => toastError(er.message)); };
 $('#log-follow').onchange = () => {
   if ($('#log-follow').checked && !logSearchMode) startLogStream($('#log-file').value);
   else stopLogStream();

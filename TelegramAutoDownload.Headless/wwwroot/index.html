@@ -82,27 +82,30 @@
 <div id="app-screen" class="hidden">
 <header>
   <h1>Telegram Auto Download</h1>
-  <nav>
-    <button data-tab="chats"    class="active">Chats</button>
-    <button data-tab="queue">Queue</button>
-    <button data-tab="status">Status</button>
-    <button data-tab="settings">Settings</button>
-    <button data-tab="logs">Logs</button>
+  <nav role="tablist" aria-label="Main">
+    <button role="tab" aria-selected="true" aria-controls="tab-chats" data-tab="chats" class="active" id="tabbtn-chats">Chats</button>
+    <button role="tab" aria-selected="false" aria-controls="tab-queue" data-tab="queue" id="tabbtn-queue">Queue</button>
+    <button role="tab" aria-selected="false" aria-controls="tab-status" data-tab="status" id="tabbtn-status">Status</button>
+    <button role="tab" aria-selected="false" aria-controls="tab-settings" data-tab="settings" id="tabbtn-settings">Settings</button>
+    <button role="tab" aria-selected="false" aria-controls="tab-logs" data-tab="logs" id="tabbtn-logs">Logs</button>
   </nav>
   <div id="header-user" class="header-user muted hidden"></div>
-  <div id="conn" title="Connection"></div>
+  <div id="data-freshness" class="data-freshness muted hidden" title="Last successful data refresh"></div>
+  <div id="conn" title="Connection" aria-label="Telegram connection status"></div>
 </header>
 
 <div id="flood-banner" class="banner hidden" role="alert"></div>
+<div id="global-downloads-paused-banner" class="banner downloads-paused hidden" role="status"></div>
+<div id="loader-banner" class="banner loader-error hidden" role="alert"></div>
 
 <main>
   <!-- CHATS -->
-  <section id="tab-chats" class="tab active">
+  <section id="tab-chats" class="tab active" role="tabpanel" aria-labelledby="tabbtn-chats">
     <div class="card wide info-card">
       <strong>How monitoring works</strong>
       <p class="hint">
         <strong>☑ Monitor</strong> — forward-only: captures <em>new</em> messages as they arrive. Does <em>not</em> scan old history. Uncheck to stop queue processing for that chat.<br>
-        <strong>Bootstrap</strong> — rate-limited history scan → items queued in the database → downloaded gradually (safe for huge chats).<br>
+        <strong>Bootstrap</strong> — rate-limited history scan → items queued in the database → downloaded gradually (safe for huge chats). Monitored chats can use <strong>Sync</strong> (same scan, stricter guard).<br>
         <strong>Test 10</strong> — download the newest 10 media items as a probe (no queue DB writes). Review the report before bootstrap.<br>
         <strong>Clear queue</strong> — on the Queue tab, removes all tracked items for a chat from the database (files on disk are kept).
       </p>
@@ -115,33 +118,39 @@
     </div>
     <div class="toolbar">
       <button id="btn-refresh-chats">🔄 Refresh from Telegram</button>
-      <input id="chat-search" type="search" placeholder="Filter…">
+      <input id="chat-search" type="search" placeholder="Filter…" aria-label="Filter chats">
       <span id="chat-count" class="muted"></span>
     </div>
+    <div id="chats-loading" class="skeleton-block hidden" aria-hidden="true"></div>
+    <div id="chats-empty" class="empty-state hidden">No chats match your filter. Refresh from Telegram or clear the search box.</div>
+    <div class="table-scroll">
     <table id="chat-table">
       <thead>
         <tr>
-          <th title="Monitor this chat">☑</th>
-          <th>Name</th>
-          <th>Type</th>
-          <th>Members</th>
-          <th title="Min file size in MB">Min MB</th>
-          <th title="Videos / Photos / Music / Files">V P M F</th>
-          <th title="YouTube / SocialMedia / Direct / Torrent">Y S D T</th>
-          <th>Filter (regex; ;)</th>
-          <th>Folder template</th>
-          <th>History</th>
-          <th title="Last bootstrap / history scan">Last sync</th>
-          <th title="Rate-limited history scan → queue">Bootstrap</th>
-          <th title="Probe download newest 10 media">Test</th>
+          <th data-col="monitor" title="Monitor this chat">Monitor</th>
+          <th data-col="name">Name</th>
+          <th data-col="type">Type</th>
+          <th data-col="members">Members</th>
+          <th data-col="minmb" title="Min file size in MB">Min MB</th>
+          <th data-col="media" title="Videos, Photos, Music, Files">Media types</th>
+          <th data-col="plugins" title="YouTube, Social, Direct, Torrent">URL plugins</th>
+          <th data-col="filter">Filter (regex; ;)</th>
+          <th data-col="folder">Folder template</th>
+          <th data-col="mute" title="Mute Telegram notifications">Mute</th>
+          <th data-col="reactions" title="Done / download start / history reaction emoji">Reactions</th>
+          <th data-col="history">History</th>
+          <th data-col="sync" title="Last bootstrap / history scan">Last sync</th>
+          <th data-col="bootstrap" title="Rate-limited history scan → queue">Bootstrap</th>
+          <th data-col="test" title="Probe download newest 10 media">Test</th>
         </tr>
       </thead>
       <tbody></tbody>
     </table>
+    </div>
   </section>
 
   <!-- QUEUE -->
-  <section id="tab-queue" class="tab">
+  <section id="tab-queue" class="tab" role="tabpanel" aria-labelledby="tabbtn-queue">
     <div class="cards" id="queue-cards"></div>
 
     <div class="card wide">
@@ -175,67 +184,100 @@
       </label>
       <div id="parallel-warn" class="warn-box hidden"></div>
       <button id="btn-save-limits">Save limits</button>
+      <button id="btn-reset-limits" type="button" class="inline">Reset to server defaults</button>
     </div>
 
     <h3>Bootstrap jobs</h3>
+    <div class="table-scroll">
     <table id="bootstrap-table">
       <thead>
         <tr><th>Chat</th><th>Status</th><th>Discovered</th><th>Inserted</th><th>Started</th><th></th></tr>
       </thead>
       <tbody></tbody>
     </table>
+    </div>
 
     <h3>Per-chat queue</h3>
+    <div class="table-scroll">
     <table id="queue-chat-table">
       <thead>
         <tr><th>Chat</th><th>Total</th><th>Pending</th><th>Queued</th><th>In progress</th><th>Done</th><th>Failed</th><th>Skipped</th><th>Last sync</th><th>Bytes</th><th></th></tr>
       </thead>
       <tbody></tbody>
     </table>
+    </div>
 
     <h3>Skipped items
       <button id="btn-refresh-skipped" class="inline">Refresh</button>
       <button id="btn-retry-all-skipped" class="inline">Retry all skipped</button>
     </h3>
-    <p class="hint">Skipped is usually intentional: already on disk, duplicate, sticker/voice, type disabled (V/P/M/F off), below Min MB, or regex filter. Hover a row for the reason.</p>
+    <p class="hint">Skipped is usually intentional: already on disk, duplicate, sticker/voice, type disabled, below Min MB, or regex filter. Hover a row for the reason.</p>
+    <div class="table-scroll">
     <table id="skipped-table">
       <thead>
         <tr><th>Chat</th><th>Msg</th><th>File</th><th>Kind</th><th>Size</th><th>Reason</th><th></th></tr>
       </thead>
       <tbody></tbody>
     </table>
+    </div>
 
     <h3>Failed items
       <button id="btn-refresh-failed" class="inline">Refresh</button>
       <button id="btn-retry-all-failed" class="inline">Retry all failed</button>
       <button id="btn-delete-all-failed" class="inline danger">Delete all failed</button>
     </h3>
+    <div class="table-scroll">
     <table id="failed-table">
       <thead>
         <tr><th>Chat</th><th>Msg</th><th>File</th><th>Kind</th><th>Size</th><th>Attempts</th><th>Error</th><th></th></tr>
       </thead>
       <tbody></tbody>
     </table>
+    </div>
   </section>
 
   <!-- STATUS -->
-  <section id="tab-status" class="tab">
+  <section id="tab-status" class="tab" role="tabpanel" aria-labelledby="tabbtn-status">
     <div class="cards">
       <div class="metric"><span class="muted">Monitored</span><strong id="m-monitored">0</strong></div>
       <div class="metric"><span class="muted">Active</span><strong id="m-active">0</strong></div>
       <div class="metric"><span class="muted">Folder</span><strong id="m-folder">—</strong></div>
+      <div class="metric"><span class="muted">Downloads</span><strong id="m-downloads-state">—</strong></div>
+      <div class="metric"><span class="muted">Flood wait</span><strong id="m-flood">—</strong></div>
     </div>
     <h3>Live downloads</h3>
+    <div id="dl-empty" class="empty-state hidden">No active or recent downloads — idle queue is normal.</div>
+    <div class="table-scroll">
     <table id="dl-table">
       <thead>
-        <tr><th>Chat</th><th>File</th><th>Plugin</th><th>Status</th><th>Progress</th><th>Bytes</th><th>Error</th></tr>
+        <tr><th>Chat</th><th>File</th><th>Plugin</th><th>Status</th><th>Progress</th><th>Bytes</th><th>Updated</th><th>Error</th></tr>
       </thead>
       <tbody></tbody>
     </table>
+    </div>
   </section>
 
   <!-- SETTINGS -->
-  <section id="tab-settings" class="tab">
+  <section id="tab-settings" class="tab" role="tabpanel" aria-labelledby="tabbtn-settings">
+    <div class="card">
+      <h2>Appearance</h2>
+      <label>Theme
+        <select id="ui-theme">
+          <option value="system">System</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+      </label>
+      <label>Accent colour <input id="ui-accent" type="color" value="#2563eb"></label>
+      <label>Table density
+        <select id="ui-density">
+          <option value="comfortable">Comfortable</option>
+          <option value="compact">Compact</option>
+        </select>
+      </label>
+      <button id="btn-save-appearance" type="button">Save appearance</button>
+    </div>
+
     <div class="card">
       <h2>Settings</h2>
       <label>Download folder <input id="s-folder" type="text"></label>
@@ -278,7 +320,7 @@
   </section>
 
   <!-- LOGS -->
-  <section id="tab-logs" class="tab">
+  <section id="tab-logs" class="tab" role="tabpanel" aria-labelledby="tabbtn-logs">
     <div class="card wide">
       <h2>Application logs</h2>
       <p class="hint">Tail + live stream from <code>DATA_DIR/logs</code>. Large files are read server-side only — the browser keeps a rolling buffer (max 5,000 lines).</p>
@@ -306,6 +348,19 @@
 </main>
 </div>
 
+<div id="toast-region" class="toast-region" aria-live="polite" aria-relevant="additions"></div>
+
+<div id="confirm-dialog" class="modal-overlay hidden" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-message">
+  <div class="auth-card modal-card confirm-card">
+    <h2 id="confirm-title">Confirm</h2>
+    <p id="confirm-message" class="hint"></p>
+    <div class="confirm-actions">
+      <button id="confirm-cancel" type="button">Cancel</button>
+      <button id="confirm-ok" type="button" class="primary">Continue</button>
+    </div>
+  </div>
+</div>
+
 <!-- Required when default password is still in use -->
 <div id="password-change-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="pwd-modal-title">
   <div class="auth-card modal-card">
@@ -330,6 +385,7 @@
   </div>
 </div>
 
+<script src="/app-ui.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>
