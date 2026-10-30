@@ -4,42 +4,48 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
 
 namespace TelegramAutoDownload.Services
 {
-    /// <summary>
-    /// Ensures yt-dlp.exe and ffmpeg.exe are present and up-to-date.
-    /// On startup: downloads if missing, then checks GitHub for newer versions and updates silently.
-    /// yt-dlp auto-discovers ffmpeg when both exes are in the same folder.
-    /// </summary>
     public static class YtdlpService
     {
         private const string GitHubApiUrl =
             "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest";
 
-        // yt-dlp/FFmpeg-Builds provides ffmpeg builds specifically maintained for yt-dlp compatibility
         private const string FfmpegZipUrl =
             "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip";
 
-        /// <summary>Writable tools folder in %APPDATA%\TelegramAutoDownload\tools\</summary>
+        private const string FfmpegSumsUrl =
+            "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/SHA2-256SUMS";
+
+        private const string FfmpegZipFileName = "ffmpeg-master-latest-win64-gpl.zip";
+
         public static string ToolsFolder => AppPaths.ToolsDir;
 
         public static string ExePath    => Path.Combine(ToolsFolder, "yt-dlp.exe");
         public static string FfmpegPath => Path.Combine(ToolsFolder, "ffmpeg.exe");
 
-        /// <summary>
-        /// Status message updated during update checks (for MainWindow footer display).
-        /// </summary>
         public static string StatusMessage { get; private set; } = string.Empty;
         public static event Action<string>? StatusChanged;
 
-        /// <summary>
-        /// Ensures yt-dlp.exe and ffmpeg.exe exist and checks for yt-dlp updates. Never throws.
-        /// </summary>
+        public static bool IsAutoDownloadDisabled()
+        {
+            var v = Environment.GetEnvironmentVariable("TAD_DISABLE_TOOL_AUTO_DOWNLOAD");
+            return string.Equals(v, "1", StringComparison.Ordinal)
+                || string.Equals(v, "true", StringComparison.OrdinalIgnoreCase);
+        }
+
         public static async Task EnsureAsync()
         {
+            if (IsAutoDownloadDisabled())
+            {
+                SetStatus("yt-dlp: auto-download disabled (TAD_DISABLE_TOOL_AUTO_DOWNLOAD)");
+                return;
+            }
+
             await EnsureYtdlpAsync();
             await EnsureFfmpegAsync();
         }
@@ -48,7 +54,6 @@ namespace TelegramAutoDownload.Services
         {
             try
             {
-                // If yt-dlp is bundled with the installer (read-only install dir), copy it to writable AppData
                 if (!File.Exists(ExePath))
                 {
                     var bundled = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tools", "yt-dlp.exe");
@@ -58,38 +63,52 @@ namespace TelegramAutoDownload.Services
 
                 string? latestVersion = null;
                 string? downloadUrl = null;
+                string? sha256SumsUrl = null;
 
-                // Query GitHub for the latest release
                 try
                 {
-                    using var http = new HttpClient();
-                    http.DefaultRequestHeaders.UserAgent.ParseAdd("TelegramAutoDownload/2.2");
-                    http.Timeout = TimeSpan.FromSeconds(15);
-
+                    using var http = CreateHttpClient();
                     var json = await http.GetStringAsync(GitHubApiUrl);
                     var obj = JObject.Parse(json);
+
                     latestVersion = obj["tag_name"]?.ToString()?.TrimStart('v');
-                    downloadUrl = obj["assets"]?
-                        .FirstOrDefault(a => a["name"]?.ToString() == "yt-dlp.exe")?
-                        ["browser_download_url"]?.ToString();
+                    if (obj["assets"] is JArray assets)
+                    {
+                        foreach (var asset in assets)
+                        {
+                            var name = asset["name"]?.ToString() ?? string.Empty;
+                            var url = asset["browser_download_url"]?.ToString() ?? string.Empty;
+                            if (string.Equals(name, "SHA2-256SUMS", StringComparison.OrdinalIgnoreCase)
+                                && FileIntegrity.IsAllowedGitHubDownloadUrl(url))
+                            {
+                                sha256SumsUrl = url;
+                            }
+                            else if (name == "yt-dlp.exe" && FileIntegrity.IsAllowedGitHubDownloadUrl(url))
+                            {
+                                downloadUrl = url;
+                            }
+                        }
+                    }
                 }
                 catch (Exception ex)
                 {
                     Log.Warning(ex, "yt-dlp: Could not fetch GitHub release info");
                 }
 
-                // Download if missing
                 if (!File.Exists(ExePath))
                 {
+                    if (downloadUrl == null)
+                    {
+                        SetStatus("yt-dlp: missing and no verified download URL");
+                        return;
+                    }
+
                     SetStatus("yt-dlp: Downloading...");
-                    await DownloadFileAsync(
-                        downloadUrl ?? "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe",
-                        ExePath);
+                    await DownloadVerifiedFileAsync(downloadUrl, ExePath, sha256SumsUrl, "yt-dlp.exe");
                     SetStatus("yt-dlp: Ready");
                     return;
                 }
 
-                // Check current version and update if needed
                 string? currentVersion = GetYtdlpVersion();
                 if (currentVersion == null || latestVersion == null) return;
 
@@ -98,7 +117,7 @@ namespace TelegramAutoDownload.Services
                 {
                     SetStatus($"yt-dlp: Updating {currentVersion} → {latestVersion}...");
                     Log.Information("yt-dlp: updating from {Current} to {Latest}", currentVersion, latestVersion);
-                    await DownloadFileAsync(downloadUrl, ExePath);
+                    await DownloadVerifiedFileAsync(downloadUrl, ExePath, sha256SumsUrl, "yt-dlp.exe");
                     SetStatus($"yt-dlp: Updated to {latestVersion}");
                     Log.Information("yt-dlp: update complete");
                 }
@@ -114,16 +133,10 @@ namespace TelegramAutoDownload.Services
             }
         }
 
-        /// <summary>
-        /// Ensures ffmpeg.exe is present in the tools folder alongside yt-dlp.exe.
-        /// yt-dlp auto-discovers ffmpeg in the same directory, enabling video+audio stream merging.
-        /// Downloads from yt-dlp/FFmpeg-Builds if missing; never auto-updates (ffmpeg rarely needs it).
-        /// </summary>
         private static async Task EnsureFfmpegAsync()
         {
             if (File.Exists(FfmpegPath)) return;
 
-            // Check if bundled with installer
             var bundled = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tools", "ffmpeg.exe");
             if (File.Exists(bundled))
             {
@@ -132,23 +145,44 @@ namespace TelegramAutoDownload.Services
                 return;
             }
 
+            if (!FileIntegrity.IsAllowedGitHubDownloadUrl(FfmpegZipUrl))
+            {
+                Log.Warning("ffmpeg: bundled ZIP URL is not allowed");
+                return;
+            }
+
             try
             {
                 SetStatus("ffmpeg: Downloading (needed for video merging)...");
                 Log.Information("ffmpeg: downloading from yt-dlp/FFmpeg-Builds");
 
-                // Download the zip and extract only ffmpeg.exe — the zip is ~90 MB
-                using var http = new HttpClient();
-                http.DefaultRequestHeaders.UserAgent.ParseAdd("TelegramAutoDownload/2.2");
+                using var http = CreateHttpClient();
                 http.Timeout = TimeSpan.FromMinutes(15);
 
+                var sumsText = await http.GetStringAsync(FfmpegSumsUrl);
+                if (!FileIntegrity.TryGetHashFromSumsFile(sumsText, FfmpegZipFileName, out var expectedZipHash))
+                {
+                    Log.Warning("ffmpeg: SHA2-256SUMS missing entry for {Zip}", FfmpegZipFileName);
+                    SetStatus("ffmpeg: Download refused — missing checksums");
+                    return;
+                }
+
                 var zipBytes = await http.GetByteArrayAsync(FfmpegZipUrl);
+                var zipTmp = Path.Combine(ToolsFolder, FfmpegZipFileName + ".tmp");
+                await File.WriteAllBytesAsync(zipTmp, zipBytes);
+
+                var actualHash = await FileIntegrity.ComputeSha256HexAsync(zipTmp);
+                if (!string.Equals(actualHash, expectedZipHash, StringComparison.OrdinalIgnoreCase))
+                {
+                    try { File.Delete(zipTmp); } catch { }
+                    Log.Warning("ffmpeg: ZIP failed SHA-256 verification");
+                    SetStatus("ffmpeg: Download refused — checksum mismatch");
+                    return;
+                }
 
                 using var ms = new MemoryStream(zipBytes);
                 using var zip = new ZipArchive(ms, ZipArchiveMode.Read);
 
-                // The zip contains a single top-level folder, e.g.:
-                // ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe
                 foreach (var entry in zip.Entries)
                 {
                     if (entry.FullName.EndsWith("/ffmpeg.exe", StringComparison.OrdinalIgnoreCase)
@@ -160,12 +194,14 @@ namespace TelegramAutoDownload.Services
                             await src.CopyToAsync(dst);
 
                         File.Move(tmp, FfmpegPath, overwrite: true);
+                        try { File.Delete(zipTmp); } catch { }
                         Log.Information("ffmpeg: extracted to {Path}", FfmpegPath);
                         SetStatus("ffmpeg: Ready");
                         return;
                     }
                 }
 
+                try { File.Delete(zipTmp); } catch { }
                 Log.Warning("ffmpeg: ffmpeg.exe not found inside the downloaded zip");
                 SetStatus("ffmpeg: Download failed — video+audio may save as separate files");
             }
@@ -176,15 +212,43 @@ namespace TelegramAutoDownload.Services
             }
         }
 
-        private static async Task DownloadFileAsync(string url, string destPath)
+        private static async Task DownloadVerifiedFileAsync(
+            string url,
+            string destPath,
+            string? sha256SumsUrl,
+            string sumsFileName)
         {
-            using var http = new HttpClient();
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("TelegramAutoDownload/2.2");
-            http.Timeout = TimeSpan.FromMinutes(10);
+            if (!FileIntegrity.IsAllowedGitHubDownloadUrl(url))
+                throw new InvalidOperationException("Refusing to download from a non-GitHub URL.");
+
+            using var http = CreateHttpClient();
             var bytes = await http.GetByteArrayAsync(url);
+
+            if (string.IsNullOrEmpty(sha256SumsUrl))
+                throw new InvalidOperationException("Refusing to install without SHA2-256SUMS from the release.");
+
+            var sums = await http.GetStringAsync(sha256SumsUrl);
+            if (!FileIntegrity.TryGetHashFromSumsFile(sums, sumsFileName, out var expectedHash))
+                throw new InvalidOperationException($"SHA2-256SUMS does not list {sumsFileName}.");
+
             string tmp = destPath + ".tmp";
             await File.WriteAllBytesAsync(tmp, bytes);
+            var actual = await FileIntegrity.ComputeSha256HexAsync(tmp);
+            if (!string.Equals(actual, expectedHash, StringComparison.OrdinalIgnoreCase))
+            {
+                try { File.Delete(tmp); } catch { }
+                throw new InvalidOperationException("Downloaded file failed SHA-256 verification.");
+            }
+
             File.Move(tmp, destPath, overwrite: true);
+        }
+
+        private static HttpClient CreateHttpClient()
+        {
+            var http = new HttpClient();
+            http.DefaultRequestHeaders.UserAgent.ParseAdd($"TelegramAutoDownload/{AppVersion.Current}");
+            http.Timeout = TimeSpan.FromMinutes(10);
+            return http;
         }
 
         private static string? GetYtdlpVersion()

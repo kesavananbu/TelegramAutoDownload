@@ -4,6 +4,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
 using System.Windows;
@@ -17,6 +18,9 @@ namespace TelegramAutoDownload.Services
         public string Changelog { get; init; } = string.Empty;
         public string AssetUrl { get; init; } = string.Empty;
         public string AssetName { get; init; } = string.Empty;
+        public string? ExpectedSha256 { get; init; }
+        public string? Sha256SumsUrl { get; init; }
+        public string ReleasePageUrl { get; init; } = string.Empty;
     }
 
     public static class AutoUpdateService
@@ -24,12 +28,6 @@ namespace TelegramAutoDownload.Services
         private static readonly string ApiUrl =
             $"https://api.github.com/repos/{AppVersion.GitHubOwner}/{AppVersion.GitHubRepo}/releases/latest";
 
-        /// <summary>
-        /// Returns true when the running executable is NOT inside the standard installer paths
-        /// (Program Files / LocalAppData). Portable users run from a custom folder such as Downloads.
-        /// In portable mode we update via ZIP (in-place copy) instead of running the Setup.exe,
-        /// which would install to Program Files and leave the original exe unchanged.
-        /// </summary>
         private static bool IsPortableInstall()
         {
             var exePath = Process.GetCurrentProcess().MainModule?.FileName ?? string.Empty;
@@ -41,35 +39,30 @@ namespace TelegramAutoDownload.Services
                 && !exePath.StartsWith(local, StringComparison.OrdinalIgnoreCase);
         }
 
-        /// <summary>
-        /// Checks GitHub for a newer release.
-        /// Returns the release info if a newer version is available, or null if already up to date.
-        /// Asset selection is install-type aware:
-        ///   • Installed (Program Files) → Setup.exe so the installer handles UAC + registry
-        ///   • Portable (any other folder) → ZIP so the in-place batch copy replaces the running exe
-        /// </summary>
         public static async Task<ReleaseInfo?> CheckAsync()
         {
             try
             {
-                using var http = new HttpClient();
-                http.DefaultRequestHeaders.UserAgent.ParseAdd($"TelegramAutoDownload/{AppVersion.Current}");
-                http.Timeout = TimeSpan.FromSeconds(15);
-
+                using var http = CreateHttpClient();
                 var json = await http.GetStringAsync(ApiUrl);
                 var obj = JObject.Parse(json);
 
                 var tagName = obj["tag_name"]?.ToString() ?? string.Empty;
                 var version = tagName.TrimStart('v');
                 var changelog = obj["body"]?.ToString() ?? string.Empty;
+                var releasePage = obj["html_url"]?.ToString() ?? string.Empty;
 
-                if (!IsNewer(version, AppVersion.Current))
+                if (!AppVersionCompare.IsNewer(version, AppVersion.Current))
                     return null;
 
                 bool portable = IsPortableInstall();
                 string assetUrl = string.Empty, assetName = string.Empty;
+                string? assetDigest = null;
                 string setupUrl = string.Empty, setupName = string.Empty;
+                string? setupDigest = null;
                 string zipUrl   = string.Empty, zipName   = string.Empty;
+                string? zipDigest = null;
+                string? sha256SumsUrl = null;
 
                 var assets = obj["assets"] as JArray;
                 if (assets != null)
@@ -78,25 +71,49 @@ namespace TelegramAutoDownload.Services
                     {
                         var name = asset["name"]?.ToString() ?? string.Empty;
                         var url  = asset["browser_download_url"]?.ToString() ?? string.Empty;
+                        var digest = FileIntegrity.ParseGitHubAssetDigest(asset["digest"]?.ToString());
+
+                        if (string.Equals(name, "SHA256SUMS.txt", StringComparison.OrdinalIgnoreCase)
+                            && FileIntegrity.IsAllowedGitHubDownloadUrl(url))
+                        {
+                            sha256SumsUrl = url;
+                            continue;
+                        }
+
+                        if (!FileIntegrity.IsAllowedUpdateAssetName(name)
+                            || !FileIntegrity.IsAllowedGitHubDownloadUrl(url))
+                            continue;
+
                         if (name.EndsWith("_Setup.exe", StringComparison.OrdinalIgnoreCase) && setupUrl == string.Empty)
-                        { setupUrl = url; setupName = name; }
-                        else if (name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) && zipUrl == string.Empty)
-                        { zipUrl = url; zipName = name; }
+                        {
+                            setupUrl = url;
+                            setupName = name;
+                            setupDigest = digest;
+                        }
+                        else if (name.EndsWith("_Portable.zip", StringComparison.OrdinalIgnoreCase) && zipUrl == string.Empty)
+                        {
+                            zipUrl = url;
+                            zipName = name;
+                            zipDigest = digest;
+                        }
                     }
                 }
 
                 if (portable)
                 {
-                    // Portable: prefer ZIP so the batch script copies files into the current folder
                     assetUrl  = zipUrl   != string.Empty ? zipUrl   : setupUrl;
                     assetName = zipUrl   != string.Empty ? zipName  : setupName;
+                    assetDigest = zipUrl != string.Empty ? zipDigest : setupDigest;
                 }
                 else
                 {
-                    // Installed: prefer Setup.exe for proper UAC elevation and registry updates
                     assetUrl  = setupUrl != string.Empty ? setupUrl : zipUrl;
                     assetName = setupUrl != string.Empty ? setupName : zipName;
+                    assetDigest = setupUrl != string.Empty ? setupDigest : zipDigest;
                 }
+
+                if (string.IsNullOrEmpty(assetUrl) || !FileIntegrity.IsAllowedUpdateAssetName(assetName))
+                    return null;
 
                 Log.Information("Update available: {Version} (portable={P}, asset={A})", version, portable, assetName);
 
@@ -106,7 +123,10 @@ namespace TelegramAutoDownload.Services
                     Version = version,
                     Changelog = changelog,
                     AssetUrl = assetUrl,
-                    AssetName = assetName
+                    AssetName = assetName,
+                    ExpectedSha256 = assetDigest,
+                    Sha256SumsUrl = sha256SumsUrl,
+                    ReleasePageUrl = releasePage
                 };
             }
             catch (Exception ex)
@@ -116,27 +136,26 @@ namespace TelegramAutoDownload.Services
             }
         }
 
-        /// <summary>
-        /// Downloads the Setup EXE (preferred) or portable ZIP, then installs.
-        /// For the Setup EXE: closes the app and launches the installer (handles UAC + file replacement).
-        /// For the ZIP fallback: uses a batch script to xcopy files after the process exits.
-        /// </summary>
         public static async Task DownloadAndInstallAsync(ReleaseInfo release, Action<int>? onProgress = null)
         {
             if (string.IsNullOrEmpty(release.AssetUrl))
                 throw new InvalidOperationException(
                     "No installer asset is attached to this release yet.\nPlease download manually from GitHub.");
 
-            var tmpFile = Path.Combine(Path.GetTempPath(), release.AssetName);
+            if (!FileIntegrity.IsAllowedUpdateAssetName(release.AssetName))
+                throw new UpdateIntegrityException("Release asset name is not on the allowlist.");
+
+            if (!FileIntegrity.IsAllowedGitHubDownloadUrl(release.AssetUrl))
+                throw new UpdateIntegrityException("Release download URL is not from an allowed GitHub host.");
+
+            var workDir = Path.Combine(Path.GetTempPath(), "TAD_update_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(workDir);
+            var tmpFile = Path.Combine(workDir, release.AssetName);
             bool isInstaller = release.AssetName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
 
             try
             {
-                // Download the asset
-                using var http = new HttpClient();
-                http.DefaultRequestHeaders.UserAgent.ParseAdd($"TelegramAutoDownload/{AppVersion.Current}");
-                http.Timeout = TimeSpan.FromMinutes(15);
-
+                using var http = CreateHttpClient();
                 using var response = await http.GetAsync(release.AssetUrl, HttpCompletionOption.ResponseHeadersRead);
                 response.EnsureSuccessStatusCode();
 
@@ -159,96 +178,138 @@ namespace TelegramAutoDownload.Services
 
                 onProgress?.Invoke(100);
 
+                var expectedHash = release.ExpectedSha256;
+                if (string.IsNullOrEmpty(expectedHash) && !string.IsNullOrEmpty(release.Sha256SumsUrl))
+                {
+                    var sums = await http.GetStringAsync(release.Sha256SumsUrl);
+                    if (!FileIntegrity.TryGetHashFromSumsFile(sums, release.AssetName, out var fromSums))
+                    {
+                        throw new UpdateIntegrityException(
+                            "SHA256SUMS.txt is present but does not list this release asset.",
+                            missingIntegrityMetadata: true);
+                    }
+                    expectedHash = fromSums;
+                }
+
+                if (string.IsNullOrEmpty(expectedHash))
+                {
+                    throw new UpdateIntegrityException(
+                        "This release has no SHA-256 digest. Auto-install is disabled; download manually from GitHub.",
+                        missingIntegrityMetadata: true);
+                }
+
+                var actualHash = await FileIntegrity.ComputeSha256HexAsync(tmpFile);
+                if (!string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase))
+                {
+                    try { File.Delete(tmpFile); } catch { }
+                    throw new UpdateIntegrityException("Downloaded update failed SHA-256 verification.");
+                }
+
                 if (isInstaller)
-                {
-                    // Launch the installer only AFTER this process exits so files are not locked.
-                    // MainWindow normally intercepts close with a tray dialog — IsForceShutdown bypasses it.
-                    var pid = Process.GetCurrentProcess().Id;
-                    var batchPath = Path.Combine(Path.GetTempPath(), "tad_setup_updater.bat");
-                    File.WriteAllText(batchPath, $@"@echo off
-:wait
-tasklist /fi ""pid eq {pid}"" | findstr /i ""{pid}"" >nul 2>&1
-if not errorlevel 1 ( timeout /t 1 /nobreak >nul & goto wait )
-timeout /t 2 /nobreak >nul
-taskkill /f /im TelegramAutoDownload.exe >nul 2>&1
-timeout /t 3 /nobreak >nul
-""{tmpFile}"" /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS
-del ""%~f0""
-");
-                    Process.Start(new ProcessStartInfo("cmd.exe", $"/c \"{batchPath}\"")
-                    {
-                        CreateNoWindow = true,
-                        UseShellExecute = false
-                    });
-
-                    Application.Current.Dispatcher.Invoke(() =>
-                    {
-                        App.IsForceShutdown = true;
-                        Application.Current.Shutdown();
-                    });
-                }
+                    await LaunchSetupInstallerAsync(workDir, tmpFile);
                 else
-                {
-                    // ZIP fallback: extract and xcopy via batch (portable installs only)
-                    var tmpExtract = Path.Combine(Path.GetTempPath(), $"TAD_update_{release.Version}");
-                    if (Directory.Exists(tmpExtract)) Directory.Delete(tmpExtract, true);
-                    System.IO.Compression.ZipFile.ExtractToDirectory(tmpFile, tmpExtract);
-
-                    string srcDir = tmpExtract;
-                    var subdirs = Directory.GetDirectories(tmpExtract);
-                    // Only treat as "single root folder" layout if the root contains NO files of its own.
-                    // Our portable ZIP has the exe directly at root plus a Plugins/ subfolder,
-                    // so subdirs.Length == 1 but srcDir must stay at root.
-                    if (subdirs.Length == 1 && !Directory.GetFiles(tmpExtract).Any())
-                        srcDir = subdirs[0];
-
-                    var appDir = AppDomain.CurrentDomain.BaseDirectory;
-                    var exeName = Path.GetFileName(Process.GetCurrentProcess().MainModule!.FileName);
-                    var pid = Process.GetCurrentProcess().Id;
-                    var batchPath = Path.Combine(Path.GetTempPath(), "tad_updater.bat");
-
-                    // NOTE: robocopy exit codes 0-7 are success/info; 8+ are errors.
-                    // xcopy is kept as a fallback in case robocopy is unavailable.
-                    File.WriteAllText(batchPath, $@"@echo off
-:wait
-tasklist /fi ""pid eq {pid}"" | findstr /i ""{pid}"" >nul 2>&1
-if not errorlevel 1 ( timeout /t 1 /nobreak >nul & goto wait )
-robocopy ""{srcDir}"" ""{appDir.TrimEnd('\\', '/')}"" /e /is /it /np /nfl /ndl >nul 2>&1
-if errorlevel 8 xcopy /e /y /q ""{srcDir}\*"" ""{appDir.TrimEnd('\\', '/')}\""  >nul 2>&1
-timeout /t 1 /nobreak >nul
-start """" ""{Path.Combine(appDir, exeName)}""
-del ""%~f0""
-");
-                    Process.Start(new ProcessStartInfo("cmd.exe", $"/c \"{batchPath}\"")
-                    {
-                        CreateNoWindow = true,
-                        UseShellExecute = false
-                    });
-                    Application.Current.Dispatcher.Invoke(() =>
-                    {
-                        App.IsForceShutdown = true;
-                        Application.Current.Shutdown();
-                    });
-                }
+                    await LaunchPortableZipUpdateAsync(workDir, tmpFile, release.Version);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not UpdateIntegrityException)
             {
                 Log.Error(ex, "Auto-update install failed");
                 throw;
             }
             finally
             {
-                // Don't delete the EXE — the installer needs it after Shutdown()
                 if (!isInstaller)
+                {
                     try { if (File.Exists(tmpFile)) File.Delete(tmpFile); } catch { }
+                    try { if (Directory.Exists(workDir)) Directory.Delete(workDir, true); } catch { }
+                }
             }
         }
 
-        private static bool IsNewer(string candidate, string current)
+        private static async Task LaunchSetupInstallerAsync(string workDir, string installerPath)
         {
-            if (Version.TryParse(candidate, out var v1) && Version.TryParse(current, out var v2))
-                return v1 > v2;
-            return string.Compare(candidate, current, StringComparison.OrdinalIgnoreCase) > 0;
+            var pid = Process.GetCurrentProcess().Id;
+            var batchPath = Path.Combine(workDir, "run_setup.cmd");
+            await File.WriteAllTextAsync(batchPath, @"@echo off
+:wait
+tasklist /fi ""pid eq %TAD_PID%"" | findstr /i ""%TAD_PID%"" >nul 2>&1
+if not errorlevel 1 ( timeout /t 1 /nobreak >nul & goto wait )
+timeout /t 2 /nobreak >nul
+taskkill /f /im TelegramAutoDownload.exe >nul 2>&1
+timeout /t 3 /nobreak >nul
+""%TAD_INSTALLER%"" /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS
+del ""%~f0""
+");
+
+            var psi = new ProcessStartInfo("cmd.exe", $"/c \"{batchPath}\"")
+            {
+                CreateNoWindow = true,
+                UseShellExecute = false
+            };
+            psi.Environment["TAD_PID"] = pid.ToString();
+            psi.Environment["TAD_INSTALLER"] = installerPath;
+
+            Process.Start(psi);
+
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                App.IsForceShutdown = true;
+                Application.Current.Shutdown();
+            });
+        }
+
+        private static async Task LaunchPortableZipUpdateAsync(string workDir, string zipPath, string version)
+        {
+            var tmpExtract = Path.Combine(workDir, "extract");
+            if (Directory.Exists(tmpExtract)) Directory.Delete(tmpExtract, true);
+            ZipFile.ExtractToDirectory(zipPath, tmpExtract);
+
+            string srcDir = tmpExtract;
+            var subdirs = Directory.GetDirectories(tmpExtract);
+            if (subdirs.Length == 1 && !Directory.GetFiles(tmpExtract).Any())
+                srcDir = subdirs[0];
+
+            var appDir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\', '/');
+            var exeName = Path.GetFileName(Process.GetCurrentProcess().MainModule!.FileName);
+            var restartExe = Path.Combine(appDir, exeName);
+            var pid = Process.GetCurrentProcess().Id;
+            var batchPath = Path.Combine(workDir, "run_portable.cmd");
+
+            await File.WriteAllTextAsync(batchPath, @"@echo off
+:wait
+tasklist /fi ""pid eq %TAD_PID%"" | findstr /i ""%TAD_PID%"" >nul 2>&1
+if not errorlevel 1 ( timeout /t 1 /nobreak >nul & goto wait )
+robocopy ""%TAD_SRC%"" ""%TAD_DEST%"" /e /is /it /np /nfl /ndl >nul 2>&1
+if errorlevel 8 xcopy /e /y /q ""%TAD_SRC%\*"" ""%TAD_DEST%\"" >nul 2>&1
+timeout /t 1 /nobreak >nul
+start """" ""%TAD_RESTART%""
+del ""%~f0""
+");
+
+            var psi = new ProcessStartInfo("cmd.exe", $"/c \"{batchPath}\"")
+            {
+                CreateNoWindow = true,
+                UseShellExecute = false
+            };
+            psi.Environment["TAD_PID"] = pid.ToString();
+            psi.Environment["TAD_SRC"] = srcDir;
+            psi.Environment["TAD_DEST"] = appDir;
+            psi.Environment["TAD_RESTART"] = restartExe;
+
+            Process.Start(psi);
+
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                App.IsForceShutdown = true;
+                Application.Current.Shutdown();
+            });
+        }
+
+        private static HttpClient CreateHttpClient()
+        {
+            var http = new HttpClient();
+            http.DefaultRequestHeaders.UserAgent.ParseAdd($"TelegramAutoDownload/{AppVersion.Current}");
+            http.Timeout = TimeSpan.FromMinutes(15);
+            return http;
         }
     }
 }

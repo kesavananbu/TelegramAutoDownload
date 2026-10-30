@@ -1,5 +1,6 @@
 using MahApps.Metro.Controls;
 using System;
+using System.Diagnostics;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
@@ -62,6 +63,22 @@ namespace TelegramAutoDownload
                     });
                 });
                 // App will restart — control won't reach here
+            }
+            catch (UpdateIntegrityException ex) when (ex.MissingIntegrityMetadata)
+            {
+                var openPage = MessageBox.Show(
+                    $"{ex.Message}\n\nOpen the release page in your browser?",
+                    "Update verification required",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+                if (openPage == MessageBoxResult.Yes && !string.IsNullOrWhiteSpace(_release.ReleasePageUrl))
+                {
+                    Process.Start(new ProcessStartInfo(_release.ReleasePageUrl) { UseShellExecute = true });
+                }
+                btnInstall.IsEnabled = true;
+                btnSkip.IsEnabled = true;
+                pnlProgress.Visibility = Visibility.Collapsed;
+                _installing = false;
             }
             catch (Exception ex)
             {

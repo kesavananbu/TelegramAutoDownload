@@ -765,14 +765,7 @@ namespace TelegramAutoDownload
 
             try
             {
-                if (File.Exists(item.FilePath))
-                {
-                    Process.Start(new ProcessStartInfo(item.FilePath) { UseShellExecute = true });
-                    return;
-                }
-
-                if (Directory.Exists(item.FilePath))
-                    Process.Start(new ProcessStartInfo(item.FilePath) { UseShellExecute = true });
+                DownloadLaunchHelper.OpenPath(item.FilePath);
             }
             catch (Exception ex)
             {

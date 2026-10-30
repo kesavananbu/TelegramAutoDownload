@@ -9,6 +9,7 @@ using System.Net.Http;
 using System.Windows;
 using System.Windows.Navigation;
 using TelegramAutoDownload.Models;
+using TelegramAutoDownload.Services;
 using TelegramClient;
 using TelegramClient.Models;
 
@@ -149,7 +150,20 @@ namespace TelegramAutoDownload
 
         private void BtnExport_Click(object sender, RoutedEventArgs e)
         {
-            var snapshot = BuildConfigSnapshotFromUi();
+            var includeSecrets = chkIncludeSecretsInExport.IsChecked == true;
+            if (includeSecrets)
+            {
+                var confirm = MessageBox.Show(
+                    "The export will include your Telegram API hash and bot token.\n" +
+                    "Only share this file with people you trust.\n\nContinue?",
+                    "Include secrets",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+                if (confirm != MessageBoxResult.Yes)
+                    return;
+            }
+
+            var snapshot = ConfigExportHelper.ForExport(BuildConfigSnapshotFromUi(), includeSecrets);
             var json = JsonConvert.SerializeObject(snapshot, Formatting.Indented);
             var preview = new ConfigJsonPreviewDialog(json) { Owner = this };
             preview.ShowDialog();
@@ -173,7 +187,7 @@ namespace TelegramAutoDownload
             }
         }
 
-        /// <summary>Full in-memory snapshot for export (includes Telegram API hash, bot token, chats).</summary>
+        /// <summary>Full in-memory snapshot from the settings UI (secrets included — filter at export time).</summary>
         private ConfigParams BuildConfigSnapshotFromUi()
         {
             _ = int.TryParse(txtAppId.Text.Trim(), out var appId);

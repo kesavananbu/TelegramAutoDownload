@@ -26,7 +26,7 @@ Compress-Archive -Path publish/* -DestinationPath "TelegramAutoDownload_vX.X.X_P
 & "C:\InnoSetup\ISCC.exe" installer/setup.iss
 
 # 5. Release with BOTH files (never release with only one)
-gh release create vX.X.X "TelegramAutoDownload_vX.X.X_Portable.zip" "TelegramAutoDownload_vX.X.X_Setup.exe" --title "vX.X.X" --notes "..."
+gh release create vX.X.X "TelegramAutoDownload_vX.X.X_Portable.zip" "TelegramAutoDownload_vX.X.X_Setup.exe" "SHA256SUMS.txt" --title "vX.X.X" --notes "..."
 ```
 
 ## Never do

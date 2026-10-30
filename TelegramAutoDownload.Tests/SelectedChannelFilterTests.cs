@@ -134,9 +134,9 @@ namespace TelegramAutoDownload.Tests
     // AppLogAlertService — state tracking and event behaviour
     // ===========================================================================
 
+    [Collection("AppLogAlertSingleton")]
     public class AppLogAlertServiceTests : IDisposable
     {
-        // Reset shared singleton state before each test to avoid cross-test interference
         public AppLogAlertServiceTests() => AppLogAlertService.Instance.Clear();
         public void Dispose() => AppLogAlertService.Instance.Clear();
 
@@ -262,6 +262,7 @@ namespace TelegramAutoDownload.Tests
     // LogAlertSink — only fires for Warning and above
     // ===========================================================================
 
+    [Collection("AppLogAlertSingleton")]
     public class LogAlertSinkLevelFilterTests : IDisposable
     {
         private readonly LogAlertSink _sink;

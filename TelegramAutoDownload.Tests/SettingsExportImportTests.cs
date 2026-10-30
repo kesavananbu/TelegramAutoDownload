@@ -25,8 +25,11 @@ namespace TelegramAutoDownload.Tests
                 ],
             };
 
+            // Settings export uses ConfigExportHelper.ForExport (secrets stripped by default).
+            // This test still covers full ConfigParams JSON persistence when secrets are included.
             var json = JsonConvert.SerializeObject(original, Formatting.Indented);
-            json.Should().Contain("api_hash_secret").And.Contain("123456");
+            json.Should().Contain("123456");
+            json.Should().Contain("api_hash_secret");
 
             var back = JsonConvert.DeserializeObject<ConfigParams>(json);
             back.Should().NotBeNull();
