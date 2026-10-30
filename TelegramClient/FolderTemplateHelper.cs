@@ -12,6 +12,12 @@ namespace TelegramClient
     public static class FolderTemplateHelper
     {
         /// <summary>
+        /// When false (headless web UI), absolute folder templates are rejected at resolve time.
+        /// WPF keeps the default true.
+        /// </summary>
+        public static bool AllowAbsolutePaths { get; set; } = true;
+
+        /// <summary>
         /// Supported tokens: {Type}, {ChatName}, {Year}, {Month}, {Day}.
         /// </summary>
         public static readonly string[] SupportedTokens =
@@ -26,10 +32,7 @@ namespace TelegramClient
         ///   combined with the base download path by the caller.
         ///   Example: "{ChatName}/{Year}-{Month}" → "MyChannel/2026-05"
         ///
-        /// • Absolute path — the template starts with a drive letter or UNC root (Path.IsPathRooted).
-        ///   Returned unchanged so the caller can detect it with Path.IsPathRooted and use it directly
-        ///   without combining with the base download path.
-        ///   Example: "C:\Downloads\MyChannel" → "C:\Downloads\MyChannel"
+        /// • Absolute path — only when <see cref="AllowAbsolutePaths"/> is true (desktop UI).
         /// </summary>
         /// <param name="template">Template string or absolute path</param>
         /// <param name="type">Value for {Type} token, e.g. "Videos"</param>
@@ -38,6 +41,9 @@ namespace TelegramClient
         public static string? Resolve(string? template, string type, string chatName, DateTime? at = null)
         {
             if (string.IsNullOrWhiteSpace(template)) return null;
+
+            if (!AllowAbsolutePaths && Path.IsPathRooted(template.Trim()))
+                throw new InvalidOperationException("Absolute folder templates are not allowed.");
 
             var now  = at ?? DateTime.Now;
             var safe = SanitizeName(chatName);
@@ -74,12 +80,20 @@ namespace TelegramClient
             string chatName)
         {
             var folderName = SanitizeChatName(chatName);
+            if (!AllowAbsolutePaths && !IsSafeRelativeTemplate(folderTemplate))
+                throw new InvalidOperationException("Folder template path is not allowed.");
+
             var resolvedTemplate = Resolve(folderTemplate, typeFolder, folderName);
             if (resolvedTemplate != null)
             {
-                return Path.IsPathRooted(resolvedTemplate)
-                    ? resolvedTemplate
-                    : CombineRelative(downloadRoot ?? string.Empty, resolvedTemplate);
+                if (Path.IsPathRooted(resolvedTemplate))
+                {
+                    if (!AllowAbsolutePaths)
+                        throw new InvalidOperationException("Absolute folder templates are not allowed.");
+                    return resolvedTemplate;
+                }
+
+                return CombineRelative(downloadRoot ?? string.Empty, resolvedTemplate);
             }
 
             var relative = ResolveDefaultRelativePath(layout, typeFolder, folderName);
@@ -115,5 +129,19 @@ namespace TelegramClient
         }
 
         private static string SanitizeName(string name) => SanitizeChatName(name);
+
+        private static bool IsSafeRelativeTemplate(string? template)
+        {
+            if (string.IsNullOrWhiteSpace(template)) return true;
+            template = template.Trim();
+            if (Path.IsPathRooted(template)) return false;
+            if (template.Contains(':', StringComparison.Ordinal)) return false;
+            foreach (var seg in template.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (seg is "." or "..") return false;
+            }
+
+            return true;
+        }
     }
 }
