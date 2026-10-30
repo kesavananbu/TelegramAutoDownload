@@ -609,6 +609,42 @@ password, no 2FA prompt.
 Tier A costs a short outage; downloads resume from `queued` automatically
 (`Database.cs:56-60`), so the cost is bounded. Prefer C where available.
 
+#### 3.3.1 Operator checklist — container `/data` backup and restore (template)
+
+> **Label:** Procedure template consistent with §3.5 restore drill. Treat as validated only
+> after your environment passes the quarterly drill in §3.5.
+
+**Backup (preferred — Tier A):**
+
+```bash
+# 1. Stop the container (avoids torn session.dat copies)
+docker stop telegram-auto-download
+
+# 2. Archive the live data volume (session path is nested — do not skip TelegramAutoDownload/)
+tar -czf "tad-data-backup-$(date -u +%Y%m%dT%H%M%SZ).tar.gz" \
+  -C /path/to/host/data-mount \
+  config.json tad.db logs web-auth.json .web-auth-secret TelegramAutoDownload/session.dat
+
+# 3. Start the container
+docker start telegram-auto-download
+```
+
+**Restore (same host, disaster recovery):**
+
+```bash
+docker stop telegram-auto-download
+# Extract onto the bind-mounted /data root (not into /data/session.dat)
+tar -xzf tad-data-backup-YYYYMMDDTHHMMSSZ.tar.gz -C /path/to/host/data-mount
+chmod 600 /path/to/host/data-mount/config.json \
+  /path/to/host/data-mount/TelegramAutoDownload/session.dat
+docker start telegram-auto-download
+curl -sS http://localhost:8080/api/login/status   # expect logged-in stage when session restored
+```
+
+Always restore **`/data/TelegramAutoDownload/session.dat`** together with the matching
+**`/data/config.json`** (same `AppId` / `ApiHash` pair). Never run two instances against one
+session file.
+
 **Single-writer guard (DESIGN).** Write `/data/instance.lock` containing hostname
 + PID + a heartbeat timestamp; refuse to start if a lock is fresher than 60 s from
 a different host, unless `TAD_FORCE_TAKEOVER=true`. Without this, the split-brain

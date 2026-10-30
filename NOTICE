@@ -1,0 +1,100 @@
+# Third-Party Software Notices and Attributions
+
+**Telegram Auto Download** · Copyright (c) 2026 TelegramAutoDownload contributors
+
+This product includes, or interoperates with, third-party software. The components and their
+licences are listed below. Each component remains subject to its own licence terms, which
+take precedence over this project's MIT licence with respect to that component.
+
+---
+
+## 1. Trademark and affiliation disclaimer
+
+**This product is not produced by, endorsed by, affiliated with, or supported by Telegram
+Messenger Inc. or any of its affiliates.**
+
+"Telegram" is a trademark of Telegram Messenger Inc. Any reference to it in documentation is
+solely to describe interoperability. This product uses the publicly documented Telegram API
+and requires you to supply your own API credentials obtained from <https://my.telegram.org>.
+
+Other trademarks referenced in documentation are the property of their respective owners and
+are used for identification purposes only.
+
+---
+
+## 2. Managed (.NET) components
+
+All components in this section are licensed under permissive terms (MIT or Apache-2.0). None
+imposes a source-disclosure obligation on this application's source code.
+
+### MIT-licensed components
+
+| Component | Version | Copyright | Project |
+|---|---|---|---|
+| WTelegramClient | 4.4.2 | © 2021-2026 Olivier Marcoux | <https://github.com/wiz0u/WTelegramClient> |
+| MonoTorrent | 3.0.2 | © Alan McGovern and contributors | <https://github.com/alanmcgovern/monotorrent> |
+| Ytdlp.NET | 3.0.4 | © Manojbabu (ManuHub) | <https://github.com/manusoft/Ytdlp.NET> |
+| Newtonsoft.Json | 13.0.3 | © James Newton-King | <https://github.com/JamesNK/Newtonsoft.Json> |
+| MahApps.Metro | 2.4.11 | © MahApps contributors | <https://github.com/MahApps/MahApps.Metro> |
+| QRCoder / QRCoder.Xaml | 1.7.0 | © Raffael Herrmann | <https://github.com/codebude/QRCoder> |
+| dotenv.net | 3.2.0 | © Bolorunduro Winner-Timothy | <https://github.com/bolorundurowb/dotenv.net> |
+| Microsoft.Data.Sqlite | 8.0.10 | © Microsoft Corporation | <https://github.com/dotnet/efcore> |
+| .NET Runtime & ASP.NET Core | 8.0 | © Microsoft Corporation | <https://github.com/dotnet/runtime> |
+
+### Apache-2.0-licensed components
+
+| Component | Version | Copyright | Project |
+|---|---|---|---|
+| Serilog | 4.2.0 | © Serilog Contributors | <https://github.com/serilog/serilog> |
+| Serilog.Sinks.File | 6.0.0 | © Serilog Contributors | <https://github.com/serilog/serilog-sinks-file> |
+| Serilog.Sinks.Console | 6.0.0 | © Serilog Contributors | <https://github.com/serilog/serilog-sinks-console> |
+| Serilog.Sinks.Seq | 8.0.0 | © Datalust and Serilog Contributors | <https://github.com/datalust/serilog-sinks-seq> |
+| Serilog.AspNetCore | 8.0.3 | © Serilog Contributors | <https://github.com/serilog/serilog-aspnetcore> |
+| Dapper | 2.1.35 | © Sam Saffron, Marc Gravell, Nick Craver | <https://github.com/DapperLib/Dapper> |
+
+Licensed under the Apache License, Version 2.0; see <http://www.apache.org/licenses/LICENSE-2.0>.
+
+Development and test packages (xunit, FluentAssertions, Microsoft.NET.Test.Sdk, etc.) are not
+distributed in release artifacts.
+
+---
+
+## 3. External executables
+
+The product invokes the following programs as **separate operating-system processes**. It does
+not link against them or incorporate their code.
+
+### yt-dlp
+
+- Project: <https://github.com/yt-dlp/yt-dlp>
+- Source licence: **The Unlicense**
+
+Windows `yt-dlp.exe` PyInstaller bundles may be **GPLv3+** when downloaded at runtime; see
+<https://github.com/yt-dlp/yt-dlp/blob/master/THIRD_PARTY_LICENSES.txt>.
+
+### FFmpeg
+
+- Project: <https://ffmpeg.org/> · Source: <https://github.com/FFmpeg/FFmpeg>
+
+| Distribution | Source of the binary | Effective licence |
+|---|---|---|
+| **Docker image** | Debian `ffmpeg` package (`apt-get install ffmpeg`) | **GPL-2.0-or-later** |
+| **Windows** | FFmpeg build downloaded with yt-dlp tooling at runtime | **GPL-2.0-or-later** (typical GPL builds) |
+
+Debian documents that default `ffmpeg` packages are **GPL v2+** when GPL codec libraries are
+linked. Corresponding source for the exact Debian packages in a published image can be obtained
+with `apt-get source ffmpeg` inside the container, or from **Debian snapshot archives** at
+<https://snapshot.debian.org/> for the image's Debian version.
+
+This application launches `ffmpeg` as an external process only; it is not a derivative work of
+FFmpeg.
+
+### SQLite
+
+Embedded via `Microsoft.Data.Sqlite`. SQLite is **public domain**.
+<https://www.sqlite.org/copyright.html>
+
+---
+
+*Compiled from project dependency manifests. Regenerate when dependencies or the container base
+image change.*

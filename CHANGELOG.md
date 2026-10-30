@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **Documentation:** README corrected for features verified against the codebase (plugin priorities/names, yt-dlp quality, quiet hours, dark mode, download list sorting/speed, folder template dates, settings export fields, build/test instructions). Added security notes and unofficial-client disclaimer.
+- **Licensing:** Adopted MIT `LICENSE`, root `NOTICE` (third-party attributions), and `SECURITY.md` (vulnerability reporting via GitHub).
+
 ## [2.9.3] - 2026-05-24
 
 ### Added

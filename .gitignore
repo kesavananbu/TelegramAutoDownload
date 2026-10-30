@@ -7,6 +7,20 @@ _tmp_out/
 config.txt
 .env
 
+# Local data volumes (Docker / dev — never commit). Root-anchored: an unanchored
+# `data/` also matches TelegramAutoDownload.Headless/Data/ on case-insensitive filesystems.
+/data/
+/downloads/
+web-auth.json
+.web-auth-secret
+session.dat
+tad.db
+tad.db-*
+
+# Coverage and test output (never commit)
+_baseline_cov/
+TestResults/
+
 # External tools (download separately; see README)
 tools/*.exe
 

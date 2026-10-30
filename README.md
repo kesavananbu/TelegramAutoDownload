@@ -1,5 +1,7 @@
 # Telegram Auto Download
 
+> **Unofficial** — not affiliated with, endorsed by, or supported by Telegram Messenger Inc.
+
 > **v2.9.3** — A WPF desktop application for Windows that monitors Telegram channels, groups, and DMs and automatically downloads media, YouTube/social-media links, and torrents.
 
 ---
@@ -17,8 +19,8 @@
 - **Open from UI** — 📂 opens the finished file or torrent folder directly from the Downloads list
 
 ### Per-chat settings
-- **Per-chat provider toggles** — enable/disable YouTube, SocialMedia, Torrent, or Direct per chat
-- **Per-chat yt-dlp quality** — choose Best, 4K, 1080p, 720p, 480p, or Audio-only per chat
+- **Per-chat provider toggles** — enable/disable YouTube, SocialMedia, Torrent, or **Other** (generic HTTP; shown as “Direct” in the UI) per chat. Native Telegram attachments are handled outside the plugin chain.
+- **yt-dlp URL downloads** — always use the best available quality (per-chat quality presets are not applied)
 - **Per-chat regex filters** — skip files whose name matches any semicolon-separated pattern (e.g. `\.jpg$; thumb_`)
 - **Per-chat folder template** — customise the download path with tokens: `{Type}`, `{ChatName}`, `{Year}`, `{Month}`, `{Day}`
 - **Emoji reactions** — send a reaction when a download starts and/or completes (configurable per chat)
@@ -29,14 +31,11 @@
 - **Missed-update catch-up** — when `UpdateChannelTooLong` is received, the app fetches and processes any missed messages automatically
 - **Sticker / voice message filtering** — stickers and voice messages are silently skipped
 
-### Scheduling
-- **Quiet Hours** — configure a daily time window (supports overnight, e.g. 23:00–07:00) during which no new downloads are started; use Sync afterwards to catch up
-
 ### Statistics & monitoring
 - **Session stats** in the header strip — files downloaded and bytes transferred since last launch
 - **All-time persistent stats** — total file count and bytes saved across all sessions (stored in `stats.json`)
 - **Disk space bar** — free space on the download drive, total folder size and file count; turns orange/red when space is low
-- **Real-time progress** — speed, ETA, and percentage for every active download
+- **Real-time progress** — ETA and percentage for every active download; **Speed** is a cumulative average since the transfer started (not an instantaneous rate)
 - **Total speed badge** — combined download speed of all active downloads
 
 ### Notifications
@@ -49,14 +48,14 @@
 - **Smart update type detection** — portable users get a ZIP + robocopy update; installed users get a silent installer
 
 ### Plugin system
-Plugins are resolved in priority order; the first successful plugin stops the chain.
+Plugins handle **URL and torrent text** in messages. They run in **priority order** (lower number first); the first successful plugin stops the chain. Telegram-native media (video, photo, file attachments) is downloaded via the Telegram API, not these plugins.
 
-| Plugin | Handles | Quality |
+| Plugin (priority) | Handles | Notes |
 |---|---|---|
-| **SocialMedia** | any `http(s)://` URL (Instagram, TikTok, Twitter/X, Reddit, Facebook, …) | yt-dlp, per-chat quality |
-| **YouTube** | `https://youtu.be/` or `https://www.youtube.com/` | yt-dlp, per-chat quality |
-| **Torrent** | `.torrent` attachments and `magnet:` links in text | MonoTorrent (BitTorrent swarm) |
-| **Direct** | Telegram file attachments | native Telegram API |
+| **SocialMedia** (2) | `http(s)://` URLs on a **domain allowlist** (Instagram, TikTok, X/Twitter, Reddit, Facebook, YouTube hosts, …) | yt-dlp, best available quality |
+| **Torrent** (3) | `.torrent` attachments and `magnet:` links in text | MonoTorrent |
+| **YouTube** (10) | YouTube URLs not already handled by SocialMedia | yt-dlp fallback |
+| **Other** (100) | Remaining `http(s)://` links | Generic HTTP download (UI label: “Direct”) |
 
 ---
 
@@ -145,8 +144,8 @@ Or open `RunnerApp.sln` in Visual Studio 2022 and press **F5**.
 | End Icon | Emoji reaction sent when a download **completes**. |
 | Download Types | **Videos / Photos / Music / Files** — which media categories are active. |
 | Min Size (MB) | Files below this size are ignored. `0` = no minimum. |
-| Providers | Which plugins are active: YouTube, Social, Torrent, Direct. |
-| Quality | yt-dlp quality for URL-based downloads: `best`, `4K`, `1080p`, `720p`, `480p`, `audio`. |
+| Providers | Which plugins are active: YouTube, Social, Torrent, Other (“Direct” in the UI). |
+| Quality | Legacy column; URL downloads always use best available quality via yt-dlp. |
 | Filter | Semicolon-separated **regex** patterns — files whose name matches any pattern are **skipped**. Example: `\.jpg$; thumb_`. See [Filter guide](#filter--ignorefilerbyregex) below. |
 | Folder | Custom download-path template with date/chat tokens. Empty = default layout. See [Folder guide](#folder-template) below. |
 | Sync | One-time retroactive sweep — downloads everything in the chat history that matches current settings and hasn't been downloaded yet. |
@@ -163,13 +162,13 @@ Or open `RunnerApp.sln` in Visual Studio 2022 and press **F5**.
 | Plugin | Plugin handling the download. |
 | Size | Bytes downloaded / total size. |
 | Progress | Progress bar + percentage. |
-| Speed | Current transfer speed. |
+| Speed | Cumulative average transfer speed since the download started. |
 | ETA | Estimated time remaining. |
 | Status | `⏳ Queued` → `⬇ Downloading` → `✔ Done` / `✖ Error` / `✖ Timeout` / `✖ Cancelled` |
 | ↺ | **Retry** — appears when a download fails; click to re-queue it. |
 | ✕ | **Cancel** — available while queued or downloading. |
 
-Active downloads are pinned to the top. Completed/error rows auto-remove after 4 seconds.
+Rows are sorted by enqueue time (newest first). Completed/error rows auto-remove after 4 seconds unless **Auto clean** is off.
 
 ### Header strip
 
@@ -228,9 +227,9 @@ The **Folder** column lets you set a custom subdirectory path inside your downlo
 |---|---|
 | `{Type}` | Chat type: `Channel`, `Group`, or `User` |
 | `{ChatName}` | Display name of the chat (special characters are sanitised) |
-| `{Year}` | 4-digit year of the message (`2026`) |
-| `{Month}` | 2-digit month (`01`–`12`) |
-| `{Day}` | 2-digit day of the month (`01`–`31`) |
+| `{Year}` | 4-digit year when the file is saved (`2026`) |
+| `{Month}` | 2-digit month when the file is saved (`01`–`12`) |
+| `{Day}` | 2-digit day when the file is saved (`01`–`31`) |
 
 **Examples**
 
@@ -256,11 +255,9 @@ Open Settings from the gear icon in the top-right corner.
 |---|---|
 | **App ID / API Hash** | Telegram API credentials from [my.telegram.org](https://my.telegram.org). Changing these requires re-login. |
 | **Notification Bot** | Optional Telegram bot for download notifications. Toggle on/off; configure token, chat ID, and which events trigger a notification. |
-| **Dark Mode** | Switches the app theme to dark. |
 | **Download Folder** | Where downloaded files are saved (browse to choose). |
 | **Parallel Threads** | How many files download simultaneously (1–10). |
-| **Quiet Hours** | Enable a daily time window during which no new downloads start. Set From/To in 24-hour format. Supports overnight windows (e.g. 23:00–07:00). Use **Sync** after quiet hours to catch up on missed messages. |
-| **Export / Import** | Export settings to JSON (credentials excluded) or import from a previously exported file. |
+| **Export / Import** | Export settings to JSON (**API hash and bot token are excluded**) or import from a previously exported file. |
 
 ---
 
@@ -294,9 +291,14 @@ All user data is stored in `%APPDATA%\TelegramAutoDownload\`:
 
 ## Running tests
 
+Build and run all test projects:
+
 ```bash
+dotnet build RunnerApp.sln
 dotnet test RunnerApp.sln
 ```
+
+On Linux/macOS, only **`TelegramAutoDownload.Headless.Tests`** runs (the WPF test project requires Windows). On Windows, both **`TelegramAutoDownload.Tests`** and **`TelegramAutoDownload.Headless.Tests`** run.
 
 The test suite covers:
 - Quality format string mapping (yt-dlp)
@@ -310,7 +312,7 @@ The test suite covers:
 - `ConfigFile` save/load round-trip
 - `CancellationRegistry` operations
 - HTTP downloader plugin (with mocked HTTP)
-- **Quiet Hours** — same-day, overnight, disabled
+- Headless API, SQLite migrations, and config paths (`TelegramAutoDownload.Headless.Tests`)
 - **DownloadItem.CanRetry** — property change notifications, state transitions
 - **FolderTemplate** — token resolution, sanitization, padding
 - **IgnoreFileByRegex** — filter string parsing
@@ -324,10 +326,9 @@ The test suite covers:
 ```
 TelegramAutoDownload (WPF, entry point)
 ├── TelegramClient          — Telegram API layer (WTelegramClient)
-│   ├── TelegramApp         — update loop, plugin dispatch, quiet hours
+│   ├── TelegramApp         — update loop, plugin dispatch
 │   ├── FileDownloadIndex   — deduplication index (debounced save)
 │   ├── PartFileCleanup     — removes stale .part files on startup
-│   ├── QuietHoursHelper    — quiet-hours window logic (testable)
 │   └── FolderTemplateHelper— folder template token resolution (testable)
 ├── BasePlugin              — shared interfaces, Config, YtdlpFormatHelper
 ├── YoutubePlugin           — yt-dlp YouTube handler
@@ -335,6 +336,14 @@ TelegramAutoDownload (WPF, entry point)
 ├── TorrentPlugin           — MonoTorrent magnet-link handler
 └── DownloadService         — direct Telegram file download plugin
 ```
+
+---
+
+## Security notes
+
+- **Web dashboard (headless):** set a strong `WEB_PASSWORD` before use. Do not expose the dashboard on the public internet without HTTPS and additional access controls (reverse proxy, firewall).
+- **Telegram session:** `session.dat` grants full API access to the linked account. In Docker it is stored at **`/data/TelegramAutoDownload/session.dat`** (under the mounted data volume). Back it up and restrict file permissions; treat backups like password backups.
+- **Account risk:** aggressive automated scanning or high download volume can trigger Telegram rate limits or account action. Prefer a dedicated account where practical.
 
 ---
 
@@ -459,4 +468,4 @@ docker buildx build --platform linux/amd64,linux/arm64 -t telegram-auto-download
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE). Third-party components are listed in [NOTICE](NOTICE).

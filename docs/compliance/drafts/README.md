@@ -14,9 +14,9 @@ Nothing here is legal advice.
 
 | File | Intended final location | Status | Notes |
 |---|---|---|---|
-| `LICENSE` | `/LICENSE` | **MIT Option C recommended** | Copy from draft; set copyright |
-| `SECURITY.md` | `/SECURITY.md` | Draft — adopt with minor edits | Free OSS standard |
-| `NOTICE.md` | `/NOTICE` + release artifacts | Draft — factual inventory | Required for Apache + GPL ffmpeg |
+| `LICENSE` | `/LICENSE` | **Adopted (MIT Option C)** | Root `/LICENSE` — Copyright (c) 2026 TelegramAutoDownload contributors |
+| `SECURITY.md` | `/SECURITY.md` | **Adopted** | GitHub private vulnerability reporting |
+| `NOTICE.md` | `/NOTICE` + release artifacts | **Adopted** | Root `/NOTICE`; includes GPL-2+ Debian ffmpeg in container |
 | `acceptable-use-policy.md` | Website / README link | Outline + clauses | Optional for GitHub-only; useful if site collects data |
 | `dmca-notice-and-takedown.md` | Website / SECURITY.md link | Process draft | Repo contact path, not §512 hosting |
 | `privacy-policy-outline.md` | Website | Outline only | Counsel if operating a website with analytics |

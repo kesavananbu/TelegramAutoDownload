@@ -2,17 +2,9 @@
 # PR Validation — build, test, coverage gate, static analysis, dependency CVE
 # scan, secret scan, and a container smoke test.
 #
-# STATUS: UNVALIDATED — Phase 5 re-run (Composer 2.5), 2026-10-01. Not executed;
-#         no dotnet build in authoring workspace. See docs/ops/05-cicd.md §5.
-#
 # WHY WINDOWS RUNNERS: TelegramAutoDownload.Tests targets net8.0-windows and
-#   project-references the WPF app (TelegramAutoDownload.Tests.csproj:4,28), so
-#   the unit-test suite cannot run on ubuntu-latest.
-#
-# WHY AN EPHEMERAL SOLUTION: the repo has no tracked .sln even though README.md
-#   references `RunnerApp.sln` (README.md:111,120,298). We synthesise one in the
-#   runner workspace so restore/build/analysis see every project. Nothing is
-#   committed. Delete this step once a real .sln is tracked.
+#   project-references the WPF app, so that suite runs on windows-latest only.
+# Headless tests run on ubuntu-latest (TelegramAutoDownload.Headless.Tests).
 # ─────────────────────────────────────────────────────────────────────────────
 name: PR Validation
 
@@ -76,26 +68,13 @@ jobs:
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
           restore-keys: nuget-${{ runner.os }}-
 
-      - name: Synthesise CI solution (no tracked .sln in repo)
-        shell: pwsh
-        run: |
-          dotnet new sln -n TelegramAutoDownload-CI
-          $projects = Get-ChildItem -Recurse -Filter *.csproj |
-            Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' }
-          if ($projects.Count -eq 0) { Write-Error "No .csproj files found"; exit 1 }
-          foreach ($p in $projects) {
-            Write-Host "sln add $($p.FullName)"
-            dotnet sln TelegramAutoDownload-CI.sln add $p.FullName
-          }
-          dotnet sln TelegramAutoDownload-CI.sln list
-
       - name: Restore
-        run: dotnet restore TelegramAutoDownload-CI.sln
+        run: dotnet restore RunnerApp.sln
 
       - name: Build (Release, warnings surfaced but not fatal yet)
         shell: pwsh
         run: |
-          dotnet build TelegramAutoDownload-CI.sln `
+          dotnet build RunnerApp.sln `
             --configuration Release `
             --no-restore `
             -warnaserror:false `
@@ -113,7 +92,7 @@ jobs:
       # UITests are FlaUI/UIA3 driven (TelegramAutoDownload.UITests.csproj:13) and
       # need an interactive desktop session. They are deliberately NOT part of the
       # PR gate — see docs/ops/05-cicd.md § "UI tests".
-      - name: Unit tests with coverage
+      - name: Unit tests with coverage (WPF suite)
         shell: pwsh
         run: |
           dotnet test TelegramAutoDownload.Tests/TelegramAutoDownload.Tests.csproj `
@@ -121,49 +100,15 @@ jobs:
             --no-build `
             --logger "trx;LogFileName=unit-tests.trx" `
             --logger "console;verbosity=normal" `
-            --results-directory artifacts/test `
+            --results-directory artifacts/test-windows `
             --collect:"Code Coverage;Format=cobertura"
 
-      - name: Coverage gate
-        shell: pwsh
-        run: |
-          $min = [double]$env:COVERAGE_MINIMUM_LINE_PERCENT
-          $reports = Get-ChildItem -Recurse -Path artifacts/test -Filter *.cobertura.xml -ErrorAction SilentlyContinue
-          if (-not $reports) {
-            Write-Error @"
-          No Cobertura report produced.
-
-          The test project does NOT reference coverlet.collector
-          (TelegramAutoDownload.Tests.csproj:10-19), so this workflow relies on the
-          Microsoft.CodeCoverage collector bundled with Microsoft.NET.Test.Sdk 17.9
-          via --collect:"Code Coverage;Format=cobertura" (Windows-only).
-
-          If this step fails on the first run, the fix is a one-line csproj change
-          (add coverlet.collector) which THIS agent was not permitted to make.
-          See docs/ops/05-cicd.md § "Coverage collector risk".
-          "@
-            exit 1
-          }
-          $best = 0.0
-          foreach ($r in $reports) {
-            [xml]$xml = Get-Content $r.FullName
-            $rate = [double]$xml.coverage.'line-rate' * 100
-            Write-Host ("{0}: {1:N2}% line coverage" -f $r.Name, $rate)
-            if ($rate -gt $best) { $best = $rate }
-          }
-          "### Coverage: $([math]::Round($best,2))% (gate: $min%)" |
-            Out-File -Append $env:GITHUB_STEP_SUMMARY
-          if ($best -lt $min) {
-            Write-Error ("Coverage {0:N2}% is below the gate of {1}%." -f $best, $min)
-            exit 1
-          }
-
-      - name: Upload test results & coverage
+      - name: Upload Windows test results & coverage
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results
-          path: artifacts/test/**
+          name: test-results-windows
+          path: artifacts/test-windows/**
           if-no-files-found: warn
 
       - name: Publish test report
@@ -171,9 +116,96 @@ jobs:
         uses: dorny/test-reporter@v1
         with:
           name: Unit tests
-          path: artifacts/test/**/*.trx
+          path: artifacts/test-windows/**/*.trx
           reporter: dotnet-trx
           fail-on-error: false
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # 1b. Headless unit tests + coverlet (Linux)
+  # ───────────────────────────────────────────────────────────────────────────
+  build-test-headless:
+    name: Build & test (headless, ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Restore headless test project
+        run: dotnet restore TelegramAutoDownload.Headless.Tests/TelegramAutoDownload.Headless.Tests.csproj
+
+      - name: Build headless test project
+        run: dotnet build TelegramAutoDownload.Headless.Tests/TelegramAutoDownload.Headless.Tests.csproj --configuration Release --no-restore
+
+      - name: Headless unit tests with coverlet
+        run: |
+          dotnet test TelegramAutoDownload.Headless.Tests/TelegramAutoDownload.Headless.Tests.csproj \
+            --configuration Release \
+            --no-build \
+            --logger "trx;LogFileName=headless-tests.trx" \
+            --logger "console;verbosity=normal" \
+            --results-directory artifacts/test-headless \
+            --collect:"XPlat Code Coverage"
+
+      - name: Upload headless test results & coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-headless
+          path: artifacts/test-headless/**
+          if-no-files-found: warn
+
+  coverage-gate:
+    name: Coverage gate
+    needs: [build-test, build-test-headless]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download coverage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: test-results-*
+          merge-multiple: true
+          path: artifacts/coverage
+
+      - name: Enforce minimum line coverage
+        shell: bash
+        env:
+          COVERAGE_MINIMUM_LINE_PERCENT: ${{ env.COVERAGE_MINIMUM_LINE_PERCENT }}
+        run: |
+          set -euo pipefail
+          min="${COVERAGE_MINIMUM_LINE_PERCENT:-30}"
+          mapfile -t reports < <(find artifacts/coverage -name '*.cobertura.xml' 2>/dev/null || true)
+          if [ "${#reports[@]}" -eq 0 ]; then
+            echo "::error::No Cobertura coverage reports found."
+            exit 1
+          fi
+          best=$(python3 - <<'PY'
+          import glob, sys, xml.etree.ElementTree as ET
+          best = 0.0
+          for path in glob.glob("artifacts/coverage/**/*.cobertura.xml", recursive=True):
+              rate = float(ET.parse(path).getroot().get("line-rate") or 0) * 100
+              print(f"{path}: {rate:.2f}%", file=sys.stderr)
+              best = max(best, rate)
+          print(best)
+          PY
+          )
+          echo "### Combined coverage: ${best}% (gate: ${min}%)" >> "$GITHUB_STEP_SUMMARY"
+          python3 -c "import sys; sys.exit(0 if float('$best') >= float('$min') else 1)" || {
+            echo "::error::Coverage ${best}% is below gate ${min}%."
+            exit 1
+          }
 
   # ───────────────────────────────────────────────────────────────────────────
   # 2. Dependency vulnerability + deprecation scan
@@ -189,21 +221,13 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Synthesise CI solution
-        shell: pwsh
-        run: |
-          dotnet new sln -n TelegramAutoDownload-CI
-          Get-ChildItem -Recurse -Filter *.csproj |
-            Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' } |
-            ForEach-Object { dotnet sln TelegramAutoDownload-CI.sln add $_.FullName }
-
       - name: Restore
-        run: dotnet restore TelegramAutoDownload-CI.sln
+        run: dotnet restore RunnerApp.sln
 
       - name: Fail on High/Critical vulnerable packages
         shell: pwsh
         run: |
-          $out = dotnet list TelegramAutoDownload-CI.sln package --vulnerable --include-transitive 2>&1 | Out-String
+          $out = dotnet list RunnerApp.sln package --vulnerable --include-transitive 2>&1 | Out-String
           Write-Host $out
           $fence = '```'   # single quotes: backticks are literal in PowerShell
           @(
@@ -224,7 +248,7 @@ jobs:
         continue-on-error: true
         shell: pwsh
         run: |
-          $out = dotnet list TelegramAutoDownload-CI.sln package --deprecated --include-transitive 2>&1 | Out-String
+          $out = dotnet list RunnerApp.sln package --deprecated --include-transitive 2>&1 | Out-String
           Write-Host $out
           $fence = '```'
           @('<details><summary>Deprecated packages</summary>', '', $fence, $out, $fence, '</details>') |
@@ -309,16 +333,8 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Synthesise CI solution
-        shell: pwsh
-        run: |
-          dotnet new sln -n TelegramAutoDownload-CI
-          Get-ChildItem -Recurse -Filter *.csproj |
-            Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' } |
-            ForEach-Object { dotnet sln TelegramAutoDownload-CI.sln add $_.FullName }
-
       - name: Restore
-        run: dotnet restore TelegramAutoDownload-CI.sln
+        run: dotnet restore RunnerApp.sln
 
       # .NET analysers with AnalysisMode=Recommended. Advisory because the repo
       # has no .editorconfig and no analyser baseline — turning this red on day
@@ -327,7 +343,7 @@ jobs:
         continue-on-error: true
         shell: pwsh
         run: |
-          dotnet build TelegramAutoDownload-CI.sln `
+          dotnet build RunnerApp.sln `
             --configuration Release --no-restore `
             /p:EnableNETAnalyzers=true `
             /p:AnalysisMode=Recommended `
@@ -441,7 +457,7 @@ jobs:
   pr-gate:
     name: PR gate
     if: always()
-    needs: [build-test, dependency-scan, secret-scan, container-smoke]
+    needs: [build-test, build-test-headless, coverage-gate, dependency-scan, secret-scan, container-smoke]
     runs-on: ubuntu-latest
     steps:
       - name: Evaluate required jobs

@@ -19,7 +19,7 @@ AppUpdatesURL={#AppURL}/releases
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 AllowNoIcons=yes
-LicenseFile=
+LicenseFile=..\LICENSE
 OutputDir={#OutputDir}
 OutputBaseFilename={#OutputName}
 SetupIconFile=..\TelegramAutoDownload\044a51cf-2359-480c-8c20-bf372f8a4cab.ico
@@ -61,6 +61,10 @@ Source: "{#SourceDir}\Plugins\*";                      DestDir: "{app}\Plugins";
 
 ; Localisation resources (MahApps etc.)
 Source: "{#SourceDir}\de\*";                           DestDir: "{app}\de"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+
+; Licence and third-party notices
+Source: "..\LICENSE";                                  DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
+Source: "..\NOTICE";                                   DestDir: "{app}"; DestName: "NOTICE.txt"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#AppName}";                     Filename: "{app}\{#AppExeName}"
