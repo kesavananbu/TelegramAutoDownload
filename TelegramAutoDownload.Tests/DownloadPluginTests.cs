@@ -19,6 +19,7 @@ namespace TelegramAutoDownload.Tests
     /// traffic is made. Each test creates an isolated temp directory so downloads
     /// never touch the real file system.
     /// </summary>
+    [Collection("DownloadLimitsGate")]
     public class DownloadPluginTests : IDisposable
     {
         private readonly string _tmpDir = Path.Combine(Path.GetTempPath(), $"dltest_{Guid.NewGuid():N}");

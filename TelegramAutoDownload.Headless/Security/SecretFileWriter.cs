@@ -1,3 +1,4 @@
+using System.Runtime.Versioning;
 using System.Security.AccessControl;
 using System.Security.Principal;
 
@@ -36,11 +37,8 @@ public static class SecretFileWriter
     {
         if (!OperatingSystem.IsWindows())
         {
-            if (Enum.IsDefined(typeof(UnixFileMode), 0))
-            {
-                File.SetUnixFileMode(directory,
-                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-            }
+            File.SetUnixFileMode(directory,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
             return;
         }
 
@@ -58,6 +56,7 @@ public static class SecretFileWriter
         TryRestrictWindows(path, isDirectory: false);
     }
 
+    [SupportedOSPlatform("windows")]
     private static void TryRestrictWindows(string path, bool isDirectory)
     {
         try

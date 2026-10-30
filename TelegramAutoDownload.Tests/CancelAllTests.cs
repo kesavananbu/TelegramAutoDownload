@@ -20,6 +20,7 @@ namespace TelegramAutoDownload.Tests
     ///   - Key resolution logic: CancellationKey match vs fall-back to chatName|fileName
     ///   - Bug scenario: token registered before CancellationKey written to UI item
     /// </summary>
+    [Collection("CancellationRegistryGlobal")]
     public class CancelAllTests
     {
         // Unique prefix so tests don't collide with each other in the shared static registry
