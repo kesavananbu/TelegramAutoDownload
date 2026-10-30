@@ -230,7 +230,8 @@ public sealed class WebAuthService
     public static bool IsPublicPath(PathString path)
     {
         var p = path.Value ?? "";
-        if (p is "/" or "/index.html" or "/styles.css" or "/app.js" or "/app-ui.js")
+        if (p is "/" or "/index.html" or "/styles.css" or "/app.js" or "/app-ui.js"
+            or "/manifest.webmanifest" or "/icon.svg")
             return true;
         if (p.Equals("/api/web-auth/status", StringComparison.OrdinalIgnoreCase))
             return true;

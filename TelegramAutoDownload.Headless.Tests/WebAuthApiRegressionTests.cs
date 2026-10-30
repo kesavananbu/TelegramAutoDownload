@@ -53,6 +53,14 @@ public sealed class WebAuthApiRegressionTests : IClassFixture<HeadlessWebApplica
         (await client.GetAsync("/app.js")).StatusCode.Should().Be(HttpStatusCode.OK);
         (await client.GetAsync("/app-ui.js")).StatusCode.Should().Be(HttpStatusCode.OK);
         (await client.GetAsync("/styles.css")).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await client.GetAsync("/icon.svg")).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var manifest = await client.GetAsync("/manifest.webmanifest");
+        manifest.StatusCode.Should().Be(HttpStatusCode.OK);
+        manifest.Content.Headers.ContentType!.MediaType.Should().Be("application/manifest+json");
+
+        var script = await client.GetAsync("/app.js");
+        script.Headers.CacheControl!.NoCache.Should().BeTrue();
     }
 
     [Fact]

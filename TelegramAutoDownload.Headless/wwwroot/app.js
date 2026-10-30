@@ -476,6 +476,7 @@ $('#btn-logout').onclick = async () => {
 // ─── Chats ──────────────────────────────────────────────────────────────────
 let allChats = [];
 let queueByChat = {};
+let activeJobsByChat = {};
 
 function formatLastSync(row) {
   if (!row?.lastScannedDate) {
@@ -527,7 +528,9 @@ async function renderChats() {
   if (tableHasFocusedInput('#chat-table')) return;
   const q = ($('#chat-search').value || loadUiPrefs().chatFilter || '').trim().toLowerCase();
   try {
-    queueByChat = Object.fromEntries((await api('/api/queue/stats/by-chat')).map(r => [r.chatId, r]));
+    const [byChat, jobs] = await Promise.all([api('/api/queue/stats/by-chat'), api('/api/bootstrap/jobs')]);
+    queueByChat = Object.fromEntries(byChat.map(r => [r.chatId, r]));
+    activeJobsByChat = Object.fromEntries(jobs.filter(j => !j.done).map(j => [j.chatId, j]));
     markLoaderOk('queueByChat');
   } catch (e) {
     markLoaderFail('queueByChat', e);
@@ -540,6 +543,8 @@ async function renderChats() {
   const tbody = $('#chat-table tbody');
   tbody.innerHTML = '';
   rows.forEach(c => tbody.appendChild(chatRow(c)));
+  applyHiddenColumns();
+  labelTableCells($('#chat-table'));
 }
 
 async function startHistoryJob(chatId, selected) {
@@ -570,21 +575,21 @@ function chatRow(c) {
     <td data-col="type">${escape(c.type)}</td>
     <td data-col="members">${c.membersCount || ''}</td>
     <td data-col="minmb"><input type="number" data-k="downloadFromSize" aria-label="Min MB for ${escape(c.name)}" value="${c.downloadFromSize}" min="0" class="input-narrow"></td>
-    <td data-col="media" class="media-checks">
-      <label><input type="checkbox" data-k="videos" ${c.videos ? 'checked' : ''}> Vid</label>
+    <td data-col="media"><div class="media-checks">
+      <label><input type="checkbox" data-k="videos" ${c.videos ? 'checked' : ''}> Video</label>
       <label><input type="checkbox" data-k="photos" ${c.photos ? 'checked' : ''}> Photo</label>
       <label><input type="checkbox" data-k="music" ${c.music ? 'checked' : ''}> Music</label>
       <label><input type="checkbox" data-k="files" ${c.files ? 'checked' : ''}> File</label>
-    </td>
-    <td data-col="plugins" class="plugin-checks">
-      <label><input type="checkbox" data-p="YouTube" ${c.plugins?.YouTube ? 'checked' : ''}> YT</label>
-      <label><input type="checkbox" data-p="SocialMedia" ${c.plugins?.SocialMedia ? 'checked' : ''}> Soc</label>
-      <label><input type="checkbox" data-p="Other" ${c.plugins?.Other ? 'checked' : ''}> Dir</label>
-      <label><input type="checkbox" data-p="Torrent" ${c.plugins?.Torrent ? 'checked' : ''}> Tor</label>
-    </td>
-    <td data-col="filter"><input type="text" data-k="filter" value="${escape(c.filter || '')}" placeholder="regex; pattern"></td>
+    </div></td>
+    <td data-col="plugins"><div class="plugin-checks">
+      <label title="YouTube links"><input type="checkbox" data-p="YouTube" ${c.plugins?.YouTube ? 'checked' : ''}> YouTube</label>
+      <label title="Social media links"><input type="checkbox" data-p="SocialMedia" ${c.plugins?.SocialMedia ? 'checked' : ''}> Social</label>
+      <label title="Direct file links"><input type="checkbox" data-p="Other" ${c.plugins?.Other ? 'checked' : ''}> Direct</label>
+      <label title="Torrent / magnet links"><input type="checkbox" data-p="Torrent" ${c.plugins?.Torrent ? 'checked' : ''}> Torrent</label>
+    </div></td>
+    <td data-col="filter"><input type="text" data-k="filter" value="${escape(c.filter || '')}" placeholder="regex; pattern" aria-label="Filter for ${escape(c.name)}"></td>
     <td data-col="folder">
-      <input type="text" data-k="folderTemplate" value="${escape(c.folderTemplate || '')}" placeholder="{Type}/{ChatName}">
+      <input type="text" data-k="folderTemplate" value="${escape(c.folderTemplate || '')}" placeholder="{Type}/{ChatName}" aria-label="Folder template for ${escape(c.name)}">
       <details class="provider-folders">
         <summary>Per-provider folders</summary>
         <label>Social <input type="text" data-f="socialDownloadFolderTemplate" value="${escape(c.socialDownloadFolderTemplate || '')}"></label>
@@ -594,12 +599,12 @@ function chatRow(c) {
       </details>
     </td>
     <td data-col="mute"><input type="checkbox" data-mute ${c.muted ? 'checked' : ''} aria-label="Mute ${escape(c.name)} on Telegram"></td>
-    <td data-col="reactions" class="reaction-inputs">
-      <input type="text" data-r="reactionIcon" value="${escape(c.reactionIcon || '')}" placeholder="Done" title="Reaction when download completes">
-      <input type="text" data-r="downloadStartIcon" value="${escape(c.downloadStartIcon || '')}" placeholder="Start" title="Reaction when download starts">
-      <input type="text" data-r="historyIcon" value="${escape(c.historyIcon || '')}" placeholder="History" title="Reaction when history saved">
+    <td data-col="reactions"><div class="reaction-inputs">
+      <input type="text" data-r="reactionIcon" value="${escape(c.reactionIcon || '')}" placeholder="Done" title="Reaction when download completes" aria-label="Done reaction for ${escape(c.name)}">
+      <input type="text" data-r="downloadStartIcon" value="${escape(c.downloadStartIcon || '')}" placeholder="Start" title="Reaction when download starts" aria-label="Start reaction for ${escape(c.name)}">
+      <input type="text" data-r="historyIcon" value="${escape(c.historyIcon || '')}" placeholder="History" title="Reaction when history saved" aria-label="History reaction for ${escape(c.name)}">
       <button type="button" data-act="load-reactions" class="inline">Load emoji</button>
-    </td>
+    </div></td>
     <td data-col="history"><input type="checkbox" data-k="saveHistory" aria-label="Save history for ${escape(c.name)}" ${c.saveHistory ? 'checked' : ''}></td>
     <td data-col="sync" class="${sync.stale ? 'sync-stale' : 'sync-ok'}" title="${escape(sync.title)}" data-bootstrap-status>${escape(sync.text)}</td>
     <td data-col="bootstrap"><button data-act="bootstrap" title="Scan history for new media since last sync">${c.selected ? '⬇ Sync' : '⬇ Bootstrap'}</button></td>
@@ -710,20 +715,20 @@ function chatRow(c) {
     finally { e.target.disabled = false; e.target.textContent = '🧪 Test 10'; }
   };
 
-  refreshBootstrapStatusCell(tr, c.id);
+  showBootstrapJob(tr, activeJobsByChat[c.id]);
   return tr;
 }
 
-async function refreshBootstrapStatusCell(tr, chatId) {
+function showBootstrapJob(tr, job) {
   const cell = tr.querySelector('[data-bootstrap-status]');
-  if (!cell) return;
-  try {
-    const job = await api(`/api/chats/${chatId}/bootstrap`);
-    if (job && !job.done) {
-      cell.textContent = `${job.status} · ${job.discovered}/${job.inserted}`;
-      cell.classList.add('sync-stale');
-    }
-  } catch { /* no active job */ }
+  if (!cell || !job || job.done) return;
+  cell.textContent = `${job.status} · ${job.discovered}/${job.inserted}`;
+  cell.classList.add('sync-stale');
+}
+
+async function refreshBootstrapStatusCell(tr, chatId) {
+  try { showBootstrapJob(tr, await api(`/api/chats/${chatId}/bootstrap`)); }
+  catch { /* no active job */ }
 }
 
 function showTestDownloadReport(report) {
@@ -885,6 +890,7 @@ async function refreshQueue() {
     if (!tableHasFocusedInput('#queue-chat-table')) renderQueueByChat(byChat);
     if (!tableHasFocusedInput('#skipped-table')) renderSkippedItems(skipped);
     if (!tableHasFocusedInput('#failed-table')) renderFailedItems(failed);
+    ['#bootstrap-table', '#queue-chat-table', '#skipped-table', '#failed-table'].forEach(s => labelTableCells($(s)));
 
     if (!tableHasFocusedInput('.limits-grid')) {
       $('#q-capacity').value = limits.scannerApiCapacity ?? 5;
@@ -1180,6 +1186,7 @@ async function refreshStatus() {
       tr.querySelector('.bar > span').style.width = `${pct}%`;
       body.appendChild(tr);
     });
+    labelTableCells($('#dl-table'));
   } catch (e) {
     markLoaderFail('status', e);
     toastError(e.message);
@@ -1188,6 +1195,7 @@ async function refreshStatus() {
 
 // ─── Settings ───────────────────────────────────────────────────────────────
 async function loadSettings() {
+  renderColumnPicker();
   try {
     const [s, ws] = await Promise.all([api('/api/settings'), api('/api/web-auth/status')]);
     markLoaderOk('settings');
@@ -1206,15 +1214,46 @@ async function loadSettings() {
   }
 }
 
-$('#btn-save-appearance')?.addEventListener('click', () => {
-  const patch = {
+const DEFAULT_ACCENT = '#2563eb';
+const ALWAYS_VISIBLE_COLUMNS = new Set(['monitor', 'name']);
+
+function renderColumnPicker() {
+  const box = $('#ui-columns');
+  if (!box) return;
+  const hidden = new Set(loadUiPrefs().hiddenColumns || []);
+  box.innerHTML = '';
+  $$('#chat-table thead th[data-col]').forEach(th => {
+    const col = th.dataset.col;
+    if (ALWAYS_VISIBLE_COLUMNS.has(col)) return;
+    const label = document.createElement('label');
+    label.innerHTML = `<input type="checkbox" data-col-toggle="${escape(col)}" ${hidden.has(col) ? '' : 'checked'}> ${escape(th.textContent.trim())}`;
+    box.appendChild(label);
+  });
+}
+
+function saveAppearanceFromForm() {
+  const hiddenColumns = $$('#ui-columns input[data-col-toggle]').filter(i => !i.checked).map(i => i.dataset.colToggle);
+  saveUiPrefs({
     theme: $('#ui-theme')?.value || 'system',
-    accent: $('#ui-accent')?.value || '#2563eb',
+    accent: $('#ui-accent')?.value || DEFAULT_ACCENT,
     density: $('#ui-density')?.value || 'comfortable',
-  };
-  saveUiPrefs(patch);
+    hiddenColumns,
+  });
   applyThemeFromPrefs();
-  toast('Appearance saved on this device.');
+}
+
+['#ui-theme', '#ui-density'].forEach(sel => $(sel)?.addEventListener('change', saveAppearanceFromForm));
+$('#ui-accent')?.addEventListener('input', saveAppearanceFromForm);
+$('#ui-columns')?.addEventListener('change', saveAppearanceFromForm);
+
+$('#btn-reset-appearance')?.addEventListener('click', () => {
+  saveUiPrefs({ theme: 'system', accent: null, density: 'comfortable', hiddenColumns: [] });
+  applyThemeFromPrefs();
+  $('#ui-theme').value = 'system';
+  $('#ui-accent').value = DEFAULT_ACCENT;
+  $('#ui-density').value = 'comfortable';
+  renderColumnPicker();
+  toast('Appearance reset to defaults.');
 });
 
 $('#btn-reset-limits')?.addEventListener('click', async () => {

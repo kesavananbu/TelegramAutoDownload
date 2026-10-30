@@ -1,0 +1,13 @@
+{
+  "name": "Telegram Auto Download",
+  "short_name": "Auto Download",
+  "description": "Monitor Telegram chats and manage the download queue.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#1c1f24",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

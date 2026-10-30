@@ -35,8 +35,10 @@
 |-------|--------|
 | `node --check` on `app.js`, `app-ui.js` | Pass |
 | `dotnet build TelegramAutoDownload.Headless --artifacts-path D:\tad-artifacts\t5` | Pass |
-| `dotnet test TelegramAutoDownload.Headless.Tests --artifacts-path D:\tad-artifacts\t5` | Blocked: `testhost` file lock from parallel agent run; one unrelated `TelegramApiBudgetTests` failure observed mid-run |
-| Browser manual | **Not run** (no isolated server this session) |
+| `dotnet test … --artifacts-path D:\tad-artifacts\t5` | Failed (exit 4294967295): `testhost` DLL lock; unrelated `TelegramApiBudgetTests` fail seen on first run |
+| `dotnet test … --artifacts-path D:\tad-artifacts\t5-retry` | Failed (exit 4294967295) after ~26m; log ends after “test files matched” — no pass/fail summary (likely hang/kill under parallel checkout load) |
+| Browser manual | **Not run** by the agent (no isolated server this session) |
+| Controller browser pass (2026-10-30) | Done at 1024 px and 390 px, light and dark, with mocked Telegram data. Fixed: chat-table columns shifted one place (flex `td`s), Enter in the confirm dialog confirmed with Cancel focused, hidden-column preference hid headers only, one bootstrap request per chat per render, dark-mode gaps (danger card, modal title, borders, status boxes), tab bar squeezed off-screen on phones. Added: phone card layout for all tables, column picker + instant-apply appearance + reset, web app manifest/icon, `Cache-Control: no-cache` on static assets. |
 
 ## Delivered vs spec
 

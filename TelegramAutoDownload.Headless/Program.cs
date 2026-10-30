@@ -100,7 +100,12 @@ app.UseRateLimiter();
 app.UseWebAuth();
 app.Use(AddSecurityHeaders);
 app.UseDefaultFiles();
-app.UseStaticFiles(new StaticFileOptions { ServeUnknownFileTypes = false });
+app.UseStaticFiles(new StaticFileOptions
+{
+    ServeUnknownFileTypes = false,
+    // Asset URLs are not content-hashed, so browsers must revalidate (ETag) or an upgrade mixes old JS with new HTML.
+    OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = "no-cache",
+});
 
 // ─── Web UI login (username/password — public endpoints) ─────────────────────
 app.MapGet("/api/web-auth/status", (WebAuthService auth, HttpContext ctx) =>

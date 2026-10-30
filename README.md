@@ -356,6 +356,10 @@ TelegramAutoDownload (WPF, entry point)
 | `LISTEN_URL` | Bind address (default `http://0.0.0.0:8080`). |
 
 Changing the password or signing out invalidates every existing session. Sign-in attempts are rate-limited, and successful and failed logins are recorded in `DATA_DIR/audit-<date>.log` (never the password).
+
+#### Dashboard on desktop and phone
+
+The dashboard adapts to the screen: on phones every table turns into a list of labelled cards, and the browser's **Add to Home Screen** / **Install app** opens it full-screen like a native app. Under **Settings → Appearance** you can pick a light, dark, or system theme, an accent colour, compact or comfortable tables, and which Chats-table columns to show. These choices apply instantly and are stored per browser.
 - **Telegram session:** `session.dat` grants full API access to the linked account. In Docker it is stored at **`/data/TelegramAutoDownload/session.dat`** (under the mounted data volume). Back it up and restrict file permissions; treat backups like password backups.
 - **Account risk:** aggressive automated scanning or high download volume can trigger Telegram rate limits or account action. Prefer a dedicated account where practical.
 

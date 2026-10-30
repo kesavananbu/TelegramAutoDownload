@@ -25,12 +25,27 @@ function applyThemeFromPrefs() {
   const theme = p.theme || 'system';
   document.documentElement.dataset.theme = theme;
   if (p.accent) document.documentElement.style.setProperty('--accent', p.accent);
-  if (p.density) document.documentElement.dataset.density = p.density;
-  if (p.hiddenColumns && Array.isArray(p.hiddenColumns)) {
-    p.hiddenColumns.forEach(col => {
-      document.querySelectorAll(`#chat-table [data-col="${col}"]`).forEach(el => el.classList.add('col-hidden'));
-    });
-  }
+  else document.documentElement.style.removeProperty('--accent');
+  document.documentElement.dataset.density = p.density || 'comfortable';
+  applyHiddenColumns();
+}
+
+function applyHiddenColumns() {
+  const hidden = new Set(Array.isArray(loadUiPrefs().hiddenColumns) ? loadUiPrefs().hiddenColumns : []);
+  document.querySelectorAll('#chat-table [data-col]').forEach(el => {
+    el.classList.toggle('col-hidden', hidden.has(el.dataset.col));
+  });
+}
+
+/** Copies header text into each body cell's data-label so narrow screens can render rows as labelled cards. */
+function labelTableCells(table) {
+  if (!table) return;
+  const heads = Array.from(table.querySelectorAll('thead th')).map(th => th.textContent.trim());
+  table.querySelectorAll('tbody tr').forEach(tr => {
+    const cells = Array.from(tr.children);
+    if (cells.length === 1 && cells[0].colSpan > 1) return;
+    cells.forEach((td, i) => { if (heads[i]) td.dataset.label = heads[i]; });
+  });
 }
 
 function toast(message, { variant = 'info', duration = 5500 } = {}) {
@@ -57,6 +72,7 @@ function confirmDialog({ title = 'Confirm', message = '', confirmText = 'Continu
     document.getElementById('confirm-message').textContent = message;
     ok.textContent = confirmText;
     ok.classList.toggle('btn-danger', danger);
+    const returnFocus = document.activeElement;
 
     const finish = (val) => {
       dlg.classList.add('hidden');
@@ -65,6 +81,7 @@ function confirmDialog({ title = 'Confirm', message = '', confirmText = 'Continu
       document.removeEventListener('keydown', onKey);
       if (confirmTrapHandler) dlg.removeEventListener('keydown', confirmTrapHandler);
       confirmTrapHandler = null;
+      if (returnFocus && typeof returnFocus.focus === 'function') returnFocus.focus();
       resolve(val);
     };
 
@@ -79,9 +96,9 @@ function confirmDialog({ title = 'Confirm', message = '', confirmText = 'Continu
       else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
     };
 
+    // Enter is left to the focused button; Cancel has initial focus, so Enter never confirms a destructive action by default.
     const onKey = (e) => {
       if (e.key === 'Escape') finish(false);
-      if (e.key === 'Enter') finish(true);
     };
 
     ok.onclick = () => finish(true);
