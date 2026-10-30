@@ -1,6 +1,11 @@
+using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
+using Newtonsoft.Json;
 using TelegramAutoDownload.Headless;
+using TelegramAutoDownload.Headless.Security;
 
 namespace TelegramAutoDownload.Headless.Tests;
 
@@ -19,6 +24,7 @@ public sealed class WebAuthServiceTests : IDisposable
         Environment.SetEnvironmentVariable("WEB_USERNAME", "charuser");
         Environment.SetEnvironmentVariable("WEB_PASSWORD", "charpass12345");
         Environment.SetEnvironmentVariable("WEB_AUTH_SECRET", "characterization-signing-key");
+        Environment.SetEnvironmentVariable("WEB_PASSWORD_RESET", null);
     }
 
     public void Dispose() => CleanupAuthFiles();
@@ -40,16 +46,14 @@ public sealed class WebAuthServiceTests : IDisposable
     }
 
     [Fact]
-    public void Load_marks_default_password_when_web_password_env_unset()
+    public void Load_NoPasswordConfigured_DoesNotAcceptChangeme()
     {
         try
         {
             Environment.SetEnvironmentVariable("WEB_PASSWORD", null);
             var auth = WebAuthService.Load();
             auth.Enabled.Should().BeTrue();
-            auth.Username.Should().Be("charuser");
-            auth.UsingDefaultPassword.Should().BeTrue();
-            auth.ValidateCredentials("charuser", "changeme").Should().BeTrue();
+            auth.ValidateCredentials("admin", "changeme").Should().BeFalse();
         }
         finally
         {
@@ -70,7 +74,7 @@ public sealed class WebAuthServiceTests : IDisposable
     {
         var auth = WebAuthService.Load();
         var http = new DefaultHttpContext();
-        auth.SignIn(http.Response, auth.Username);
+        auth.SignIn(http, auth.Username);
 
         var setCookie = http.Response.Headers.SetCookie.ToString();
         setCookie.Should().Contain(WebAuthService.CookieName);
@@ -87,7 +91,7 @@ public sealed class WebAuthServiceTests : IDisposable
     {
         var auth = WebAuthService.Load();
         var http = new DefaultHttpContext();
-        auth.SignIn(http.Response, auth.Username);
+        auth.SignIn(http, auth.Username);
         var cookie = CookieHeaderValueOnly(http.Response.Headers.SetCookie.ToString());
         var tampered = cookie[..^4] + "xxxx";
 
@@ -107,8 +111,81 @@ public sealed class WebAuthServiceTests : IDisposable
         err2.Should().Contain("default");
 
         auth.TryChangePassword("charpass12345", "newpass98765", out _).Should().BeTrue();
-        auth.UsingDefaultPassword.Should().BeFalse();
+        auth.MustChangePassword.Should().BeFalse();
         auth.ValidateCredentials("charuser", "newpass98765").Should().BeTrue();
+    }
+
+    [Fact]
+    public void HashPassword_SameInputTwice_ProducesDifferentOutput()
+    {
+        PasswordHasher.HashPassword("same-password-value").Should()
+            .NotBe(PasswordHasher.HashPassword("same-password-value"));
+    }
+
+    [Fact]
+    public void LoadCredentials_V1Sha256File_StillAuthenticates_ThenUpgradesToV2()
+    {
+        var legacyHash = Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes("charpass12345")));
+        var file = new
+        {
+            Username = "charuser",
+            PasswordHashBase64 = legacyHash,
+            SessionEpoch = 1L,
+        };
+        File.WriteAllText(_credentialsFile, JsonConvert.SerializeObject(file));
+        Environment.SetEnvironmentVariable("WEB_PASSWORD", null);
+
+        var auth = WebAuthService.Load();
+        auth.ValidateCredentials("charuser", "charpass12345").Should().BeTrue();
+
+        var saved = JsonConvert.DeserializeObject<dynamic>(File.ReadAllText(_credentialsFile))!;
+        ((string)saved.PasswordHash).Should().StartWith("pbkdf2-sha256$");
+    }
+
+    [Fact]
+    public void ChangePassword_InvalidatesExistingSessions()
+    {
+        var auth = WebAuthService.Load();
+        var http = new DefaultHttpContext();
+        auth.SignIn(http, auth.Username);
+        var cookie = CookieHeaderValueOnly(http.Response.Headers.SetCookie.ToString());
+
+        auth.TryChangePassword("charpass12345", "newpass98765", out _).Should().BeTrue();
+
+        var request = new DefaultHttpContext();
+        request.Request.Headers.Cookie = cookie;
+        auth.TryGetSession(request.Request, out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void SignOut_InvalidatesCookieServerSide()
+    {
+        var auth = WebAuthService.Load();
+        var signIn = new DefaultHttpContext();
+        auth.SignIn(signIn, auth.Username);
+        var cookie = CookieHeaderValueOnly(signIn.Response.Headers.SetCookie.ToString());
+
+        var logout = new DefaultHttpContext();
+        auth.SignOut(logout.Response);
+
+        var replay = new DefaultHttpContext();
+        replay.Request.Headers.Cookie = cookie;
+        auth.TryGetSession(replay.Request, out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void ValidateCredentials_WrongUsername_StillPerformsKdf()
+    {
+        var auth = WebAuthService.Load();
+        var swUser = Stopwatch.StartNew();
+        auth.ValidateCredentials("not-the-user", "charpass12345");
+        swUser.Stop();
+
+        var swPass = Stopwatch.StartNew();
+        auth.ValidateCredentials("charuser", "not-the-password");
+        swPass.Stop();
+
+        swUser.Elapsed.Should().BeCloseTo(swPass.Elapsed, TimeSpan.FromMilliseconds(swPass.Elapsed.TotalMilliseconds * 0.35 + 40));
     }
 
     private static string CookieHeaderValueOnly(string setCookieHeader)
