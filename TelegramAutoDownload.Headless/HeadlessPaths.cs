@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using TelegramAutoDownload.Headless.Security;
 
 namespace TelegramAutoDownload.Headless;
 
@@ -39,5 +40,6 @@ public static class HeadlessPaths
         Directory.CreateDirectory(DownloadsDir);
         Directory.CreateDirectory(LogsDir);
         Directory.CreateDirectory(ToolsDir);
+        SecretFileWriter.ApplyDirectoryMode(DataDir);
     }
 }
