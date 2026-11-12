@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using TelegramAutoDownload.Headless.Security;
+using TelegramClient;
 
 namespace TelegramAutoDownload.Headless;
 
@@ -11,12 +12,12 @@ namespace TelegramAutoDownload.Headless;
 public static class HeadlessPaths
 {
     public static readonly string DataDir =
-        Environment.GetEnvironmentVariable("DATA_DIR")
+        EnvVars.Get("DATA_DIR")
         ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                         "TelegramAutoDownload");
 
     public static readonly string DownloadsDir =
-        Environment.GetEnvironmentVariable("DOWNLOADS_DIR")
+        EnvVars.Get("DOWNLOADS_DIR")
         ?? Path.Combine(DataDir, "downloads");
 
     public static string ConfigFile  => Path.Combine(DataDir, "config.json");

@@ -63,7 +63,7 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
     options.KnownNetworks.Clear();
     options.KnownProxies.Clear();
-    var trusted = Environment.GetEnvironmentVariable("WEB_AUTH_TRUSTED_PROXIES");
+    var trusted = TelegramClient.EnvVars.Get("WEB_AUTH_TRUSTED_PROXIES");
     if (!string.IsNullOrWhiteSpace(trusted))
     {
         foreach (var part in trusted.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
@@ -91,7 +91,7 @@ builder.Services.AddRateLimiter(options =>
     });
 });
 
-builder.WebHost.UseUrls(Environment.GetEnvironmentVariable("LISTEN_URL") ?? "http://0.0.0.0:8080");
+builder.WebHost.UseUrls(TelegramClient.EnvVars.Get("LISTEN_URL") ?? "http://0.0.0.0:8080");
 
 var app = builder.Build();
 

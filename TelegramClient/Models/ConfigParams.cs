@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using BasePlugins;
+using TelegramClient;
 using TelegramClient.Models;
 
 namespace TelegramAutoDownload.Models
@@ -8,12 +9,12 @@ namespace TelegramAutoDownload.Models
     public class ConfigParams
     {
         // Telegram client credentials — stored in config.txt; fall back to .env on first run
-        public int AppId { get; set; } = int.TryParse(Environment.GetEnvironmentVariable("APP_ID"), out var id) ? id : 0;
-        public string ApiHash { get; set; } = Environment.GetEnvironmentVariable("API_HASH") ?? string.Empty;
+        public int AppId { get; set; } = int.TryParse(EnvVars.Get("APP_ID"), out var id) ? id : 0;
+        public string ApiHash { get; set; } = EnvVars.Get("API_HASH") ?? string.Empty;
 
         // Notification bot credentials — stored in config.txt; fall back to .env on first run
-        public string BotToken { get; set; } = Environment.GetEnvironmentVariable("BOT_TOKEN") ?? string.Empty;
-        public string ChatId { get; set; } = Environment.GetEnvironmentVariable("CHAT_ID") ?? string.Empty;
+        public string BotToken { get; set; } = EnvVars.Get("BOT_TOKEN") ?? string.Empty;
+        public string ChatId { get; set; } = EnvVars.Get("CHAT_ID") ?? string.Empty;
 
         public int DownloadThreads { get; set; } = 3;
 
