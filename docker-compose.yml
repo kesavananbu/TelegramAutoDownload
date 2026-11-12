@@ -1,25 +1,32 @@
-# Pull the prebuilt multi-arch image from GHCR (recommended for Synology Container Manager
-# and other hosts). Replace GHCR_IMAGE if you use a fork or pin a version tag.
+# GHCR image from https://github.com/kesavananbu/TelegramAutoDownload (Docker Publish workflow).
+# Container env uses TELEGRAMDOWNLOAD_* so keys can live in a shared secret.env without clashes.
+# The app also accepts unprefixed names (WEB_PASSWORD, APP_ID, …) for backward compatibility.
+#
+# Local: copy .env.example → .env beside this file (WEB_* vars are substituted into TELEGRAMDOWNLOAD_* below).
+# NAS:  env_file → /data/secret.env with TELEGRAMDOWNLOAD_* keys (optional defaults still from this file).
 services:
   telegram-auto-download:
-    image: ${GHCR_IMAGE:-ghcr.io/il90il90/telegramautodownload:latest}
+    image: ${GHCR_IMAGE:-ghcr.io/kesavananbu/telegramautodownload:latest}
     container_name: telegram-auto-download
     restart: unless-stopped
     ports:
       - "${HOST_PORT:-8080}:8080"
+    # NAS / boiler-plate: uncomment and set TELEGRAMDOWNLOAD_* in /data/secret.env
+    # env_file:
+    #   - /data/secret.env
     environment:
       DATA_DIR: /data
       DOWNLOADS_DIR: /downloads
       LISTEN_URL: http://0.0.0.0:8080
-      WEB_USERNAME: ${WEB_USERNAME:-admin}
-      WEB_PASSWORD: ${WEB_PASSWORD:?Set WEB_PASSWORD in .env}
-      WEB_AUTH_ENABLED: ${WEB_AUTH_ENABLED:-true}
-      WEB_SESSION_DAYS: ${WEB_SESSION_DAYS:-7}
-      WEB_AUTH_SECURE_COOKIES: ${WEB_AUTH_SECURE_COOKIES:-false}
-      APP_ID: ${APP_ID:-}
-      API_HASH: ${API_HASH:-}
-      BOT_TOKEN: ${BOT_TOKEN:-}
-      CHAT_ID: ${CHAT_ID:-}
+      TELEGRAMDOWNLOAD_WEB_USERNAME: ${WEB_USERNAME:-admin}
+      TELEGRAMDOWNLOAD_WEB_PASSWORD: ${WEB_PASSWORD:?Set WEB_PASSWORD in .env or TELEGRAMDOWNLOAD_WEB_PASSWORD in secret.env}
+      TELEGRAMDOWNLOAD_WEB_AUTH_ENABLED: ${WEB_AUTH_ENABLED:-true}
+      TELEGRAMDOWNLOAD_WEB_SESSION_DAYS: ${WEB_SESSION_DAYS:-7}
+      TELEGRAMDOWNLOAD_WEB_AUTH_SECURE_COOKIES: ${WEB_AUTH_SECURE_COOKIES:-false}
+      TELEGRAMDOWNLOAD_APP_ID: ${APP_ID:-}
+      TELEGRAMDOWNLOAD_API_HASH: ${API_HASH:-}
+      TELEGRAMDOWNLOAD_BOT_TOKEN: ${BOT_TOKEN:-}
+      TELEGRAMDOWNLOAD_CHAT_ID: ${CHAT_ID:-}
       TZ: ${TZ:-}
     volumes:
       - ${DATA_VOLUME:-./data}:/data

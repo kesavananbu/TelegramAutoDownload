@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Newtonsoft.Json;
 using Serilog;
 using TelegramAutoDownload.Headless.Security;
+using TelegramClient;
 
 namespace TelegramAutoDownload.Headless;
 
@@ -59,8 +60,7 @@ public sealed class WebAuthService
 
     public static WebAuthService Load()
     {
-        var enabled = !string.Equals(
-            Environment.GetEnvironmentVariable("WEB_AUTH_ENABLED"), "false", StringComparison.OrdinalIgnoreCase);
+        var enabled = !EnvVars.Equals("WEB_AUTH_ENABLED", "false", StringComparison.OrdinalIgnoreCase);
 
         if (!enabled)
         {
@@ -72,7 +72,7 @@ public sealed class WebAuthService
         }
 
         var days = 7;
-        if (int.TryParse(Environment.GetEnvironmentVariable("WEB_SESSION_DAYS"), out var d) && d > 0 && d <= 365)
+        if (int.TryParse(EnvVars.Get("WEB_SESSION_DAYS"), out var d) && d > 0 && d <= 365)
             days = d;
 
         var signingKey = LoadOrCreateSigningKey();
@@ -257,8 +257,7 @@ public sealed class WebAuthService
 
     private static bool ShouldUseSecureCookies(HttpRequest request)
     {
-        if (string.Equals(
-                Environment.GetEnvironmentVariable("WEB_AUTH_INSECURE_COOKIES"), "true", StringComparison.OrdinalIgnoreCase))
+        if (EnvVars.Equals("WEB_AUTH_INSECURE_COOKIES", "true", StringComparison.OrdinalIgnoreCase))
         {
             if (string.Equals(
                     Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"), "Production", StringComparison.OrdinalIgnoreCase))
@@ -277,8 +276,7 @@ public sealed class WebAuthService
             && proto.ToString().Equals("https", StringComparison.OrdinalIgnoreCase))
             return true;
 
-        if (string.Equals(
-                Environment.GetEnvironmentVariable("WEB_AUTH_SECURE_COOKIES"), "true", StringComparison.OrdinalIgnoreCase))
+        if (EnvVars.Equals("WEB_AUTH_SECURE_COOKIES", "true", StringComparison.OrdinalIgnoreCase))
             return true;
 
         return false;
@@ -287,10 +285,9 @@ public sealed class WebAuthService
     private static (string Username, string PasswordHash, bool MustChangePassword, long SessionEpoch, string Source)
         LoadCredentials()
     {
-        var envPassword = Environment.GetEnvironmentVariable("WEB_PASSWORD");
-        var envUsername = Environment.GetEnvironmentVariable("WEB_USERNAME")?.Trim();
-        var resetFromEnv = string.Equals(
-            Environment.GetEnvironmentVariable("WEB_PASSWORD_RESET"), "true", StringComparison.OrdinalIgnoreCase);
+        var envPassword = EnvVars.Get("WEB_PASSWORD");
+        var envUsername = EnvVars.Get("WEB_USERNAME")?.Trim();
+        var resetFromEnv = EnvVars.Equals("WEB_PASSWORD_RESET", "true", StringComparison.OrdinalIgnoreCase);
 
         if (File.Exists(CredentialsFile))
         {
@@ -436,7 +433,7 @@ public sealed class WebAuthService
 
     private static byte[] LoadOrCreateSigningKey()
     {
-        var fromEnv = Environment.GetEnvironmentVariable("WEB_AUTH_SECRET");
+        var fromEnv = EnvVars.Get("WEB_AUTH_SECRET");
         if (!string.IsNullOrWhiteSpace(fromEnv))
             return SHA256.HashData(Encoding.UTF8.GetBytes(fromEnv));
 
@@ -488,10 +485,7 @@ public sealed class WebAuthService
     {
         if (IsLoopbackBind()) return;
 
-        if (string.Equals(
-                Environment.GetEnvironmentVariable("WEB_AUTH_DISABLE_I_UNDERSTAND"),
-                "true",
-                StringComparison.OrdinalIgnoreCase))
+        if (EnvVars.Equals("WEB_AUTH_DISABLE_I_UNDERSTAND", "true", StringComparison.OrdinalIgnoreCase))
         {
             Log.Warning(
                 "WEB_AUTH_DISABLE_I_UNDERSTAND=true — authentication disabled on a non-loopback bind address.");
@@ -505,7 +499,7 @@ public sealed class WebAuthService
 
     private static bool IsLoopbackBind()
     {
-        var listen = Environment.GetEnvironmentVariable("LISTEN_URL")
+        var listen = EnvVars.Get("LISTEN_URL")
                      ?? Environment.GetEnvironmentVariable("ASPNETCORE_URLS")
                      ?? "http://0.0.0.0:8080";
         foreach (var part in listen.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
